@@ -79,18 +79,22 @@ torch.nn.Module.addblock = addblock
 # temp = net
 # deeper = nn.Sequential()
 
-x = torch.randn(1, 3, 10, 10)
+x = torch.randn(1, 3, 256, 384)
 
 input_depth = x.shape[1]
-Nd = [8]
-Nu = [8]
-Ns = [4]
+Nd = [8, 16]
+Nu = [8, 16]
+Ns = [4, 4]
+main = nn.Sequential()
+currentlayer = main
+deeplayer = nn.Sequential()
+
 
 for i in range(len(Nd)):
 
-    temp = nn.Sequential()
-    skiplayer = nn.Sequential()
-    deeplayer = nn.Sequential()
+    downblock = nn.Sequential()
+    skipblock = nn.Sequential()
+    upblock = nn.Sequential()
 
     assert len(Nd) == len(Nu) == len(Ns), "Length of Number of down/up/skip kernel lists must be equal"
 
@@ -112,25 +116,64 @@ for i in range(len(Nd)):
     if first:
         ins = input_depth
 
+    else:
+        ins = Nd[i-1]
+
+    # Add Down Conv Block to current layer
+    downblock.addblock(outs=Nd[i], ins=ins, size=3, stride=2, pad=1, bn=True, act=True)
+    downblock.addblock(outs=Nd[i], ins=Nd[i], size=3, stride=1, pad=1, bn=True, act=True)
+
+    # If not last depth, add deeplayer
+    if last == False:
+        downblock.addmod(deeplayer)
+
+    # Add Upsampler to current layer
+    downblock.addmod(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True))
+
+    # If skip, add Concat Block of skiplayer and currentlayer to currentlayer
     if skip:
-        skiplayer.addblock(outs=Ns[i], ins=ins, size=1, stride=1, pad=0, bn=False, act=False)
-        deeplayer.addblock(outs=Nd[i], ins=ins, size=3, stride=2, pad=1, bn=True, act=True)
-        deeplayer.addblock(outs=Nd[i], ins=Nd[i], size=3, stride=1, pad=1, bn=True, act=True)
-        deeplayer.addmod(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True))
-        temp.addmod(Concat(1, skiplayer, deeplayer))
+        skipblock.addblock(outs=Ns[i], ins=ins, size=1, stride=1, pad=0, bn=True, act=True)
+        # main.addmod(Concat(1, skipblock, downblock))
+        currentlayer.addmod(Concat(1, skipblock, downblock))
+
+    # If not skip
+    else:
+        # pass
+        # main.addmod(downblock)
+        currentlayer.addmod(downblock)
+
+    # Add Up Conv Block to current layer
+
+    if last == True:
+        ins = Nd[i] + Ns[i]
 
     else:
-        deeplayer.addblock(outs=Nd[i], ins=ins, size=3, stride=2, pad=1, bn=True, act=True)
-        deeplayer.addblock(outs=Nd[i], ins=Nd[i], size=3, stride=1, pad=1, bn=True, act=True)
-        deeplayer.addmod(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True))
-        temp.addmod(deeplayer)
+        ins = Nd[i+1] + Ns[i]
+
+    upblock.addmod(nn.BatchNorm2d(ins))
+    upblock.addblock(outs=Nu[i], ins=ins, size=3, stride=1, pad=1, bn=True, act=True)
+    upblock.addblock(outs=Nu[i], ins=Nu[i], size=1, stride=1, pad=0, bn=True, act=True)
+
+    # main.addmod(upblock)
+    currentlayer.addmod(upblock)
+
+    # main.addmod(currentlayer)
+    currentlayer = deeplayer
 
 
-print(temp)
+lastblock = nn.Sequential()
+lastblock.addblock(outs=input_depth, ins=Nu[0], size=1, stride=1, pad=0, bn=False, act=False)
+lastblock.addmod(nn.Sigmoid())
+main.addmod(lastblock)
+
+
+
+
+print(main)
 print("-" * 100)
 info(x, "Net Input")
 print("-" * 30)
-y = temp(x)
+y = main(x)
 print("-" * 30)
 info(y, "Net Output")
 print("-" * 100)
