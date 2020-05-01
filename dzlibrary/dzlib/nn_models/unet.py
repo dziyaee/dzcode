@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 import torch.nn as nn
 from collections import namedtuple
@@ -21,12 +20,14 @@ def convblock(in_channels, out_channels, conv2d_args, batchnorm, activation):
     '''
     # ModuleDict containing valid activation key and module pairs. This is defined as a UNet class variable
     activations = UNet.activations
+    pad = int((conv2d_args.kernel_size - 1) / 2)
 
     # Convert named tuple to a dict which can be passed as a **kwargs to nn.Conv2d()
     conv2d_args = conv2d_args._asdict()
 
+
     block = []
-    block.append(nn.Conv2d(in_channels, out_channels, **conv2d_args))
+    block.append(nn.Conv2d(in_channels=in_channels, out_channels=out_channels, padding=pad, **conv2d_args))
 
     if batchnorm is True:
         block.append(nn.BatchNorm2d(out_channels))
@@ -38,7 +39,7 @@ def convblock(in_channels, out_channels, conv2d_args, batchnorm, activation):
 
 
 def concat(main, skip):
-    ''' Function to concatenate the main-branch and skip-branch outputs in the decoder block of the UNet along the channels dimension (dim=1). If the heights and widths of the main and skip images are not the same, the larger image will be center cropped to the same size as the smaller image
+    ''' Function to concatenate the main-branch and skip-branch outputs in the decoder block of the UNet along the channels dimension (dim=1). If the heights and widths of the main and skip images are not the same, the larger image will be center-cropped to the same size as the smaller image
 
         Args:
             main, skip: 4d tensors of shapes (1, C1, H1, W1) and (1, C2, H2, W2)
@@ -52,8 +53,10 @@ def concat(main, skip):
     # Only if both H1 = H2 and W1 = W2 will this be skipped
     if not ((main_height == skip_height) and (main_width == skip_width)):
 
-        # New Dim = min(Dim1, Dim2). Diff = (Old Dim - New Dim) // 2
+        # New Dim = min(Dim1, Dim2)
         new_height, new_width = min(main_height, skip_height), min(main_width, skip_width)
+
+        # Diff = (Old Dim - New Dim) // 2
         diff = lambda old, new: (old - new) // 2
 
         # Center Crop Main using Diffs and New Dims
@@ -89,16 +92,22 @@ class EncoderBlock(nn.Module):
         '''
         super().__init__()
 
-        # skip_branch convblock 1 is only created if skip_channels is not zero, else skip_branch is None.
+        # skip_branch convblock is only created if skip_channels is not zero, else skip_branch is None.
         self.skip_branch = None
         if skip_channels != 0:
-            skip_branch1 = convblock(in_channels, skip_channels, skip_convs[0], batchnorm, activation)
-            self.skip_branch = nn.Sequential(*skip_branch1)
+            skip_branch = []
+            skip_in_channels = in_channels
+            for skip_conv in skip_convs:
+                skip_branch.extend(convblock(skip_in_channels, skip_channels, skip_conv, batchnorm, activation))
+                skip_in_channels = skip_channels
+            self.skip_branch = nn.Sequential(*skip_branch)
 
-        # main_branch convblocks 1 and 2
-        main_branch1 = convblock(in_channels, out_channels, down_convs[0], batchnorm, activation)
-        main_branch2 = convblock(out_channels, out_channels, down_convs[1], batchnorm, activation)
-        self.main_branch = nn.Sequential(*main_branch1, *main_branch2)
+        main_branch = []
+        for down_conv in down_convs:
+            main_branch.extend(convblock(in_channels, out_channels, down_conv, batchnorm, activation))
+            in_channels = out_channels
+
+        self.main_branch = nn.Sequential(*main_branch)
 
     def forward(self, x):
         ''' Forward pass of Encoder Block. Takes 1 input x, and returns 2 outputs (x, sx) corresponding to the main_branch and skip_branch respectively.
@@ -154,12 +163,14 @@ class DecoderBlock(nn.Module):
         if skip_channels != 0:
             self.skip_function = concat
 
-        # skip_channels is added to in_channels, if skip_channels is zero, no change to in_channels which is intended
+        # skip_channels is added to in_channels to account for concatenation
         in_channels += skip_channels
-        batchnorm = nn.BatchNorm2d(in_channels)
-        main_branch1 = convblock(in_channels, out_channels, up_convs[0], batchnorm, activation)
-        main_branch2 = convblock(out_channels, out_channels, up_convs[1], batchnorm, activation)
-        self.main_branch = nn.Sequential(batchnorm, *main_branch1, *main_branch2)
+        main_branch = [nn.BatchNorm2d(in_channels)]
+        for up_conv in up_convs:
+            main_branch.extend(convblock(in_channels, out_channels, up_conv, batchnorm, activation))
+            in_channels = out_channels
+
+        self.main_branch = nn.Sequential(*main_branch)
 
     def forward(self, x, sx):
         ''' Forward pass of Decoder Block. Takes 2 inputs (x, sx), corresponding to the main and skip connections respectively, and returns 1 output x.
@@ -213,6 +224,9 @@ class UNet(nn.Module):
         ['leakyrelu', nn.LeakyReLU(0.2)],
         ['sigmoid', nn.Sigmoid()]])
 
+    Conv = namedtuple('Conv', 'kernel_size stride padding_mode')
+    Upsample = namedtuple('Upsample', 'size scale_factor mode align_corners')
+
     def __init__(self, in_channels, out_channels, down_channels, skip_channels, up_channels, down_convs, skip_convs, up_convs, batchnorm, last_batchnorm, activation, last_activation, upsample_args):
         ''' Args:
                 ints:
@@ -252,7 +266,7 @@ class UNet(nn.Module):
         assert isinstance(skip_convs, list)
         assert isinstance(up_convs, list)
         for conv_args in [*down_convs, *skip_convs, *up_convs]:
-            assert isinstance(conv_args, Conv)
+            assert isinstance(conv_args, self.Conv)
 
         # Assert Bool or None
         assert (isinstance(batchnorm, bool) or batchnorm is None)
@@ -263,7 +277,7 @@ class UNet(nn.Module):
         assert (last_activation in self.activations or last_activation is None)
 
         # Assert NamedTuple of name Upsample or None
-        assert (isinstance(upsample_args, Upsample) or upsample_args is None)
+        assert (isinstance(upsample_args, self.Upsample) or upsample_args is None)
 
         # main_channels: list of input channels of encoder main branch and skip branch
         # main_channels[1:]: list of output channels of encoder main branch
@@ -285,7 +299,7 @@ class UNet(nn.Module):
 
         # in_channels: update starting input channels to last output channels of decoder block, contained as the first element in the list
         in_channels = up_channels[0]
-        self.last = nn.Sequential(*convblock(in_channels, out_channels, conv2d_args=up_convs[1], batchnorm=last_batchnorm, activation=last_activation))
+        self.last = nn.Sequential(*convblock(in_channels, out_channels, conv2d_args=up_convs[-1], batchnorm=last_batchnorm, activation=last_activation))
 
     def forward(self, x):
         ''' Forward Pass of UNet:
@@ -323,21 +337,19 @@ if __name__ == '__main__':
     skip_channels = [0, 0,  0,  4,  4]
     up_channels =   [8, 16, 32, 64, 128]
 
-    # Conv, NamedTuple, takes in nn.Conv2d input arguments with corresponding names. Converted to a dict and passed as a **kwargs
-    Conv = namedtuple('Conv', 'kernel_size stride padding padding_mode')
-
+    # UNet.Conv, NamedTuple, takes in nn.Conv2d input arguments with corresponding names. Converted to a dict and passed as a **kwargs
     # Encoder Main Convs 1 & 2 Params, pass both in a list
-    down_conv1 = Conv(kernel_size=3, stride=2, padding=1, padding_mode='reflect')
-    down_conv2 = Conv(kernel_size=3, stride=1, padding=1, padding_mode='reflect')
+    down_conv1 = UNet.Conv(kernel_size=3, stride=2, padding_mode='reflect')
+    down_conv2 = UNet.Conv(kernel_size=3, stride=1, padding_mode='reflect')
     down_convs = [down_conv1, down_conv2]
 
     # Encoder Skip Conv 1 Params, pass in a list
-    skip_conv1 = Conv(kernel_size=1, stride=1, padding=0, padding_mode='reflect')
+    skip_conv1 = UNet.Conv(kernel_size=1, stride=1, padding_mode='reflect')
     skip_convs = [skip_conv1]
 
     # Decoder Main Convs 1 & 2 Params, pass both in a list
-    up_conv1 = Conv(kernel_size=3, stride=1, padding=1, padding_mode='reflect')
-    up_conv2 = Conv(kernel_size=1, stride=1, padding=0, padding_mode='reflect')
+    up_conv1 = UNet.Conv(kernel_size=3, stride=1, padding_mode='reflect')
+    up_conv2 = UNet.Conv(kernel_size=1, stride=1, padding_mode='reflect')
     up_convs = [up_conv1, up_conv2]
 
     # Unet Batchnorms (True / False / None) and Activations (see ModuleDict defined in as UNet class variable)
@@ -346,9 +358,8 @@ if __name__ == '__main__':
     activation = 'leakyrelu'
     last_activation = 'sigmoid'
 
-    # Upsample NamedTuple, takes in nn.Upsample input arguments with corresponding names. Converted to a dict and passed as a **kwargs
-    Upsample = namedtuple('Upsample', 'size scale_factor mode align_corners')
-    upsample_args = Upsample(size=None, scale_factor=2, mode='bilinear', align_corners=None)
+    # UNet.Upsample NamedTuple, takes in nn.Upsample input arguments with corresponding names. Converted to a dict and passed as a **kwargs
+    upsample_args = UNet.Upsample(size=None, scale_factor=2, mode='bilinear', align_corners=None)
 
     # pass params to UNet class
     model = UNet(
@@ -368,6 +379,10 @@ if __name__ == '__main__':
         )
 
     # print(model)
+    x = torch.randn(1, 3, 256, 384)
+    y = model(x)
+    print(x.shape)
+    print(y.shape)
     # forwardpass(model)
     # children(model)
     # modules(model)
