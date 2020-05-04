@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 from collections import namedtuple
+from dzlib.utils.helper import calc_padding
+import numpy as np
 
 
 def convblock(in_channels, out_channels, kernel_size, stride):
@@ -65,7 +67,7 @@ class EncoderBlock(nn.Module):
         sx = self.convs(x)
         print(f'\nx before pool: {sx.shape}')
         x = self.pool(sx)
-        print(f'x after pool: {x.shape}')
+        print(f'x after pool:  {x.shape}')
         return x, sx
 
 
@@ -114,10 +116,10 @@ class DecoderBlock(nn.Module):
         """
         print(f'\nx before deconv: {x.shape}')
         x = self.deconv(x)
-        print(f'x after deconv: {x.shape}')
-        print(f'sx before cat: {sx.shape}')
+        print(f'x after deconv:  {x.shape}')
+        print(f'sx before cat:   {sx.shape}')
         x = torch.cat((x, sx), dim=1)
-        print(f'x after cat: {x.shape}')
+        print(f'x after cat:     {x.shape}')
         x = self.convs(x)
         return x
 
@@ -167,6 +169,7 @@ class UNet(nn.Module):
         assert isinstance(kernel_sizes, list)
         assert isinstance(kernel_strides, list)
         assert isinstance(pool_args, list)
+        assert len(pool_args) == 2
         assert len(kernel_sizes) == len(kernel_strides)
         for element in [input_channels, output_channels, *encoder_channels, *kernel_sizes, *kernel_strides, *pool_args]:
             assert isinstance(element, int)
@@ -205,44 +208,51 @@ class UNet(nn.Module):
         self.decoder = nn.ModuleList([*decoder_blocks])
         self.last = nn.Sequential(*last_block)
 
-        # # Channels
-        # channels_list = [input_channels, *encoder_channels] # [3, 64, 128, 256, 512, 1024]
+        self.pool_size, self.pool_stride = pool_args
+        self.depth = d
 
-        # # Encoder Layers
-        # in_channels_list = channels_list[0:-2]  # [3,  64,  128, 256]
-        # out_channels_list = channels_list[1:-1] # [64, 128, 256, 512]
-        # encoderlayers = []
-        # for in_channels, out_channels in zip(in_channels_list, out_channels_list):
-        #     encoderlayers.append(EncoderBlock(in_channels, out_channels, kernel_sizes, kernel_strides, pool_args))
+    def pad2d(self, ninput):
+        self._top =  self._left =  self._height =  self._width = None
+        num, channels, height, width = ninput.shape
+        padding_height, padding_width = self._calc_padding(height, width)
+        if (padding_height == 0 and padding_width == 0):
+            return ninput
 
-        # # Mid Layers
-        # in_channels = channels_list[-2]  # 512
-        # out_channels = channels_list[-1] # 1024
-        # midlayers = []
-        # for kernel_size, stride in zip(kernel_sizes, kernel_strides):
-        #     midlayers.extend([*convblock(in_channels, out_channels, kernel_size, stride)])
-        #     in_channels = out_channels
+        else:
+            padded_ninput = torch.zeros(num, channels, height + padding_height, width + padding_width)
+            top = int(np.floor(padding_height / 2))
+            left = int(np.floor(padding_width / 2))
+            padded_ninput[:, :, top: height + top, left: width + left] = ninput[:, :, :, :]
 
-        # # Decoder Layers
-        # in_channels_list = channels_list[-1: 1: -1]  # [1024, 512, 256, 128]
-        # out_channels_list = channels_list[-2: 0: -1] # [512,  256, 128, 64]
-        # decoderlayers = []
-        # for in_channels, out_channels in zip(in_channels_list, out_channels_list):
-        #     decoderlayers.append(DecoderBlock(in_channels, out_channels, kernel_sizes, kernel_strides, pool_args))
+            self._top, self._left, self._height, self._width = top, left, height, width
+            return padded_ninput
 
-        # # Last Layers
-        # in_channels = channels_list[1] # 64
-        # out_channels = output_channels # 3
-        # lastlayers = []
-        # lastlayers.extend([
-        #     nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=1, padding=0),
-        #     nn.Sigmoid()])
+    def crop2d(self, noutput):
+        if self._top == self._left == self._height == self._width == None:
+            return noutput
 
-        # # Unpack all lists of nn.modules into final blocks
-        # self.encoder = nn.ModuleList([*encoderlayers])
-        # self.mid = nn.Sequential(*midlayers)
-        # self.decoder = nn.ModuleList([*decoderlayers])
-        # self.last = nn.Sequential(*lastlayers)
+        else:
+            top, left, height, width = self._top, self._left, self._height, self._width
+            cropped_noutput = noutput[:, :, top: height + top, left: width + left]
+            return cropped_noutput
+
+    def _calc_padding(self, height, width):
+        kernel_size = self.pool_size
+        stride = self.pool_stride
+        depth = self.depth
+
+        padding = []
+        for x in [height, width]:
+            xmin_spacing = (stride ** depth - 1) / (stride - 1)
+            xmin = 1 + (kernel_size - 1) * xmin_spacing
+
+            n = np.ceil((x - xmin) / stride ** depth)
+            validx = xmin + n * stride ** depth
+
+            newx = max(xmin, validx)
+            padding.append(int(newx - x))
+
+        return padding
 
     def forward(self, x):
         """Forward pass of the UNet. UNet takes an input x of shape (N x C x H x W).
@@ -276,22 +286,18 @@ class UNet(nn.Module):
 
 
 if __name__ == '__main__':
-    # Test
-    # Input, Image Dims, Encoder Channels
-    x = torch.randn(1, 3, 400, 400)
-    Dims = namedtuple('Dims', 'num channels height width')
-    image = Dims(*x.shape)
+    n, c, h, w = (1, 3, 400, 415)
+    ninput = torch.randn(n, c, h, w)
+    print(f"Original Height = {h}, Original Width = {w}")
 
-    encoder_channels = [64, 128, 256, 512, 1024]
-    kernel_sizes = [3, 3]
-    kernel_strides = [1, 1]
-    pool_args = [2, 2]
+    encoder_channels = [8, 16, 32, 64, 128]
+    k, s = (2, 2)
+    d = len(encoder_channels) - 1
 
-    # net = UNet(image.channels, image.channels, encoder_channels, kernel_sizes, kernel_strides, pool_args)
-    net = UNet(input_channels=3, output_channels=10, encoder_channels=[8, 16, 32, 64, 128], kernel_sizes=[3], kernel_strides=[1], pool_args=[3, 2])
-    print(net)
-    print(x.shape)
-    y = net(x)
-    print(y.shape)
+    net = UNet(input_channels=c, output_channels=3, encoder_channels=encoder_channels, kernel_sizes=[3, 3], kernel_strides=[1, 1], pool_args=[k, s])
+    ninput = net.pad2d(ninput)
+    n, c, h, w = ninput.shape
+    print(f"Padded Height =   {h}, Padded Width =   {w}")
 
-
+    noutput = net(ninput)
+    print(f"Noutput:         {noutput.shape}")
