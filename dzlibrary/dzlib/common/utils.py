@@ -22,7 +22,6 @@ def info(x, var_name="var"):
 
     return None
 
-
 def stats(x, var_name="var", ddof=1):
     ''' Helper function to print statistics (max, min, mean, std) of an array after converting it to numpy. For std, torch.std() uses unbiased estimation as default. In order to mimic this behavior with numpy.std(), input arg ddof is set to 1 by default.
     '''
@@ -40,39 +39,6 @@ def stats(x, var_name="var", ddof=1):
         print(ex)
 
     return None
-
-
-
-def npshow(x, ax):
-    ''' Function to convert and imshow a numpy array. Expected input shape is (C x H x W) or (H x W), which will be converted to (H x W x C) to make it suitable for imshow. C must be 3 or 1'''
-
-    if isinstance(x, torch.Tensor):
-        x = np.asarray(x)
-
-    if isinstance(x, np.ndarray):
-
-        # Input shape must be (C x H x W), where C = 3 or 1
-        if (x.ndim == 3) and (x.shape[0] == 3 or x.shape[0] == 1):
-
-            # Change input shape to (H x W x C), where C = 3 or 1
-            x = x.transpose(1, 2, 0)
-
-        # Input shape must be (H x W)
-        elif x.ndim == 2:
-
-            # Change input shape to (H x W x 1)
-            x = x.reshape(x.shape[0], x.shape[1], 1)
-
-        else:
-            raise Exception(f"Expected array of shape (3 x H x W), (1 x H x W) or (H x W), got {x.shape} instead")
-
-    else:
-        raise Exception("Expected input of type numpy.ndarray or torch.Tensor, got {type(x)} instead")
-
-    ax.imshow(x)
-
-    return ax
-
 
 # OS Stuff
 def get_filenames(data_dir, extension):
@@ -92,7 +58,6 @@ def make_filepaths(data_dir, filenames):
     # append data_dir to filenames
     filepaths = [data_dir + fn for fn in filenames]
     return filepaths
-
 
 # PIL Stuff
 def ccrop_pil(image_pil, factor):
@@ -129,7 +94,6 @@ def ccrop_pil(image_pil, factor):
 
     return image_pil
 
-
 def resize_pil(image_pil, factor, resample=Image.NEAREST):
     '''
     Function to resize a PIL Image from (W x H) to (W' x H') by a factor f, such that W' = W*f, and H' = H*f.
@@ -152,7 +116,3 @@ def resize_pil(image_pil, factor, resample=Image.NEAREST):
     image_pil = image_pil.resize((width, height), resample)
 
     return image_pil
-
-
-
-

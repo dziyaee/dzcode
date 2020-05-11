@@ -1,11 +1,22 @@
 import numpy as np
 import torch
-import matplotlib
 import matplotlib.pyplot as plt
 
 
 def npshow(x, ax):
-    ''' Function to convert and imshow a numpy array. Expected input shape is (C x H x W) or (H x W), which will be converted to (H x W x C) to make it suitable for imshow. C must be 3 or 1'''
+    '''Function to convert and imshow a numpy array. Expected input shape is (C x H x W) or (H x W), which will be converted to (H x W x C) to make it suitable for imshow. C must be 3 or 1
+
+    Args:
+        x (Numpy Array or Torch Tensor): x must be of shape (3 x H x W), (1 x H x W), or (H x W)
+        ax (matplotlib axis object): axis on which to call the .imshow() method
+
+    Returns:
+        ax (matplotlib axis object)
+
+    Raises:
+        Exception: x must be of type numpy.ndarray or torch.Tensor
+        Exception: x must be of shape (3 x H x W), (1 x H x W), or (H x W)
+    '''
 
     if isinstance(x, torch.Tensor):
         x = np.asarray(x)
@@ -28,7 +39,7 @@ def npshow(x, ax):
             raise Exception(f"Expected array of shape (3 x H x W), (1 x H x W) or (H x W), got {x.shape} instead")
 
     else:
-        raise Exception("Expected input of type numpy.ndarray or torch.Tensor, got {type(x)} instead")
+        raise Exception(f"Expected input of type numpy.ndarray or torch.Tensor, got {type(x)} instead")
 
     ax.imshow(x)
 
