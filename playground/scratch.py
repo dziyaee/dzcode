@@ -1,9 +1,8 @@
 import numpy as np
 from numpy import pi, sin
 import matplotlib
-matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
-
+matplotlib.use("Qt5Agg")
 
 
 def dsp_plot(nrows, ncols, plots, n, titles, subplots_kwargs):
@@ -49,6 +48,3 @@ plots = [s]
 n = times
 titles = ['square']
 dsp_plot(nrows=1, ncols=1, plots=plots, n=n, titles=titles, subplots_kwargs={'sharey': True, 'figsize': (14, 5)})
-
-
-
