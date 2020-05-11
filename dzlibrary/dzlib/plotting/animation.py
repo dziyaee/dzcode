@@ -93,6 +93,10 @@ class Animate():
         # Iterate through frames
         for i in self.frames:
 
+            # Break out of animation loop if figure no longer exists (closed by user)
+            if not plt.get_fignums():
+                break
+
             # Call update function then pause
             lines = self.update(i)
             plt.pause(self.pause)
