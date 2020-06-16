@@ -13,9 +13,9 @@ def info(x, var_name="var"):
     '''
 
     try:
-        print(f"\n{var_name} info:")
+        print(f"{var_name} info:")
         print(f"dtype: {x.dtype}")
-        print(f"shape: {x.shape}")
+        print(f"shape: {x.shape}\n")
 
     except Exception as ex:
         print(ex)
