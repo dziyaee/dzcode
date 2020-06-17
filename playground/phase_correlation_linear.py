@@ -7,33 +7,62 @@ import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 import matplotlib.patches as patches
 from dzlib.common.utils import stats, info
-from phase_correlator import image_processing
 import pdb
 mpl.use("Qt5Agg")
 
 
+def phase_correlation(X1, X2, shape):
+    # shape
+    N1, N2 = shape
+
+    # cross-power spectrum (Hadamard Product)
+    cps = np.multiply(X1, np.conj(X2))
+
+    # normalized cross-power spectrum
+    ncps = cps / (np.abs(cps) + eps)
+
+    # normalized cross-correlation
+    ncc = (1 / (N1 * N2)) * fft2(ncps)
+    return ncc
+
+
 eps = 1e-6
 
-# load images
+# create images
 N2, N1 = 400, 400
 image_path = '/'.join((os.getcwd(), 'data/image2.png'))
 image = Image.open(image_path).convert('L')
-image = np.asarray(image.resize((N2, N1))).astype(np.float32)
+image = np.asarray(image.resize((N1, N2))).astype(np.float32)
 image = np.flip(image, axis=0)
-blank = np.zeros((N2, N1)) + np.max(image)
+# blank = np.zeros((N1, N2)) + np.max(image)
+blank = np.zeros((N1, N2)) + 0
 
-x1 = image.copy()
+# shift and bounding box params
+n1, n2 = 0, 0
+a1, a2 = 0, 0
+m1 = n1 + a1
+m2 = n2 + a2
+w, h = 100, 100
+
+# initialize images within bounding boxes
+x1 = blank.copy()
 x2 = blank.copy()
-# x2 = np.zeros((N2, N1)) + 255
+x1[n2: n2+h, n1: n1+w] = image[n2: n2+h, n1: n1+w]
+x2[m2: m2+h, m1: m1+w] = image[n2: n2+h, n1: n1+w]
 
-# process images
+# compute time-domain impulse image via phase correlation
 X1, X2 = fft2(x1), fft2(x2)
-x3, eshift = image_processing(X1, X2, N1, N2)
+ncc = phase_correlation(X1, X2, (N1, N2))
+x3 = np.abs(ncc)
+
+# estimate time-domain shift (peak of impulse image), and get actual shift
+e1, e2 = np.where(x3 == np.max(x3))
+eshift = (e1[0], e2[0])
+ashift = (a1, a2)
 
 # bounding boxes
-w, h = 100, 100
-rect1 = patches.Rectangle(xy=(100, 100), width=w, height=h, fill=False, color='blue')
-rect2 = patches.Rectangle(xy=(100, 100), width=w, height=h, fill=False, color='red', ls='--')
+rect1 = patches.Rectangle(xy=(n1, n2), width=w, height=h, fill=False, color='blue')
+rect2 = patches.Rectangle(xy=(m1, m2), width=w, height=h, fill=False, color='red')
 
 # initial plot
 fig = plt.figure()
@@ -46,21 +75,21 @@ ax3 = plt.subplot(gs[0, 2:3])
 ## plot images
 vmin = np.min(image)
 vmax = np.max(image)
-img1 = ax1.imshow(x1, extent=[0, N1, 0, N2], origin='lower', interpolation=None, cmap='gray', vmin=vmin, vmax=vmax)
+img1 = ax1.imshow(image, extent=[0, N1, 0, N2], origin='lower', interpolation=None, cmap='gray', vmin=vmin, vmax=vmax)
 img2 = ax2.imshow(x2, extent=[0, N1, 0, N2], origin='lower', interpolation=None, cmap='gray', vmin=vmin, vmax=vmax)
-# img2 = ax2.imshow(x2, extent=[0, N1, 0, N2], origin='lower', interpolation=None)
-img3 = ax3.imshow(x3, extent=[0, N1, 0, N2], origin='lower', interpolation=None, cmap='Reds')
+img3 = ax3.imshow(x3, extent=[0, N1, 0, N2], origin='lower', interpolation=None, cmap='Reds', vmin=np.min(x3), vmax=np.max(x3))
 
 ## plot bounding boxes
 box1 = ax1.add_patch(rect1)
 box2 = ax2.add_patch(rect2)
 
-for ax in [ax1, ax2, ax3]:
-    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+# adjust ticks and tick labels
+ax1.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+ax2.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+ax3.tick_params(left=False, labelleft=False, right=True, labelright=True)
 
-# update plot functions
+# plotting functions
 clicking = False
-
 
 def mouse_click(event):
     global clicking
@@ -79,23 +108,39 @@ def mouse_move(event):
     ax = event.inaxes
 
     if (clicking and (ax == ax2)):
-        n1, n2 = x, y
-        update(n1, n2)
+        m1, m2 = x, y
+        update(m1, m2)
 
 
-def update(n1, n2):
+def update(m1, m2):
+    # move box2 to new coords
+    m1 = int(np.floor(min(m1, N2-w)))
+    m2 = int(np.floor(min(m2, N1-h)))
 
-    # move bounding box to new coords
-    n1 = int(np.floor(min(n1, N1-w)))
-    n2 = int(np.floor(min(n2, N2-h)))
-    box2.set_xy((n1, n2))
-
-    # create new image2
+    # update image2 with new coords
     x2 = blank.copy()
-    x2[n2: n2+h, n1: n1+w] = x1[n2: n2+h, n1: n1+w]
+    x2[m2: m2+h, m1: m1+w] = image[m2: m2+h, m1: m1+w]
+
+    # compute time-domain impulse image via phase correlation
+    X2 = fft2(x2)
+    ncc = phase_correlation(X1, X2, (N1, N2))
+    x3 = np.abs(ncc)
+
+    # estimate time-domain shift (peak of impulse image), and get actual shift
+    e2, e1 = np.where(x3 == np.max(x3))
+    eshift = (e1[0], e2[0])
+    a1 = m1 - n1
+    a2 = m2 - n2
+    ashift = (a1, a2)
+
+    # plot new images and box
+    box2.set_xy((m1, m2))
     img2.set_data(x2)
+    img3.set_data(x3)
 
-
+    # update titles
+    ax2.set_title(f'{ashift}')
+    ax3.set_title(f'{eshift}')
     fig.canvas.draw_idle()
     pass
 
