@@ -29,12 +29,15 @@ def coords_bottomleft(coords_center, scene_shape, image_shape):
     return (x, y)
 
 
+def update_ydatas(x):
+    return x.max, x.var
+
 
 # Starting Params
 global eps, i, n_points
 eps = 1e-6
-n_points = 100
-i = 0%n_points
+n_points = 200
+i = 0
 N2, N1 = 400, 400
 h, w = 100, 100
 n2, n1 = 100, 100
@@ -64,38 +67,40 @@ x3 = signal(x3)
 a1, a2 = n1-n1, n2-n2 # actual shift
 e2, e1 = np.where(x3.mag == np.max(x3.mag)) # estimated shift
 e1, e2 = e1[0] - int(w/2), e2[0] - int(h/2) # adjusted for center origin plot
-
+peak = np.where(x3.mag.flatten() == x3.max)[0]
 
 # Init data tracking
 xdata = np.arange(n_points)
-ydatas = np.zeros((n_points, 4))
-ydatas[i, :] = [x3.max, x3.mean, x3.std, x3.var]
+ydatas = np.zeros((n_points, 2))
+ydatas[i, :] = update_ydatas(x3)
 
-# Set up figure and subplots
-fig = plt.figure(figsize=(14, 5))
+# Set up figure1 and subplots
+fig1 = plt.figure(figsize=(14, 5))
 gs = GridSpec(nrows=3, ncols=15)
-ax0 = fig.add_subplot(gs[0:2, 0:3])
-ax3 = fig.add_subplot(gs[0:2, 4:8])
-ax1 = fig.add_subplot(gs[0:2, 9:12])
-ax2 = fig.add_subplot(gs[0:2, 12:15])
-ax4 = fig.add_subplot(gs[2:3, 0:3])
-ax5 = fig.add_subplot(gs[2:3, 4:7])
-ax6 = fig.add_subplot(gs[2:3, 8:11])
-ax7 = fig.add_subplot(gs[2:3, 12:15])
-axes = [ax4, ax5, ax6, ax7]
-fig.subplots_adjust(left=0.04, right=0.99, hspace=0.5, wspace=0)
-for ax in [ax1, ax2]:
+ax0 = fig1.add_subplot(gs[0:2, 0:3])
+ax1 = fig1.add_subplot(gs[0:2, 4:8])
+ax2 = fig1.add_subplot(gs[0:2, 9:12])
+ax3 = fig1.add_subplot(gs[0:2, 12:15])
+ax4 = fig1.add_subplot(gs[2:3, 0:3])
+ax5 = fig1.add_subplot(gs[2:3, 4:7])
+ax6 = fig1.add_subplot(gs[2:3, 8:15])
+axes_focus = [ax2, ax3]
+axes_stats = [ax4, ax5]
+fig1.subplots_adjust(left=0.04, right=0.99, hspace=0.5, wspace=0)
+
+for ax in axes_focus:
     ax.tick_params(left=False, labelleft=False, bottom=False, labelbottom=False)
-for ax in axes:
+for ax, ydata in zip(axes_stats, ydatas.T):
     ax.set_xlim(0, n_points)
+    ax.set_ylim(0, ydata[i]*1.1)
+
 ax0.set_title(f'Scene\nActual Shift = {a1, a2}')
-ax1.set_title(f'Image 1 Focus')
-ax2.set_title(f'Image 2 Focus')
-ax3.set_title('$x_{3mag}$ \n'f'Estimated Shift = {e1, e2}')
+ax1.set_title('$x_{3mag}$ \n'f'Estimated Shift = {e1, e2}')
+ax2.set_title(f'Image 1 Focus')
+ax3.set_title(f'Image 2 Focus')
 ax4.set_title('$MAX(x_{3mag})$')
-ax5.set_title('$MEAN(x_{3mag})$')
-ax6.set_title('$STD(x_{3mag})$')
-ax7.set_title('$VAR(x_{3mag})$')
+ax5.set_title('$VAR(x_{3mag})$')
+ax6.set_title('$Flattened x_{3mag}$ \n'f'Peak at: {peak}')
 
 # Set up bounding boxes
 rect1 = patches.Rectangle(xy=(n1, n2), width=w, height=h, fill=False, color='blue', ls='--')
@@ -105,12 +110,16 @@ rect2 = patches.Rectangle(xy=(m1, m2), width=w, height=h, fill=False, color='red
 img_scene = ax0.imshow(scene.real, extent=[0, N1, 0, N2], origin='lower', cmap='gray', interpolation=None, vmin=scene.min, vmax=scene.max)
 box1 = ax0.add_patch(rect1)
 box2 = ax0.add_patch(rect2)
-img1 = ax1.imshow(x1.real, extent=[0, h, 0, w], origin='lower', cmap='gray', interpolation=None, vmin=x1.min, vmax=x1.max)
-img2 = ax2.imshow(x2.real, extent=[0, h, 0, w], origin='lower', cmap='gray', interpolation=None, vmin=x2.min, vmax=x2.max)
-img3 = ax3.imshow(x3.mag, extent=[-w/2, w/2, -h/2, h/2], origin='lower', cmap='Reds', interpolation=None, vmin=x3.min, vmax=x3.max)
+img1 = ax1.imshow(x3.mag, extent=[-w/2, w/2, -h/2, h/2], origin='lower', cmap='Reds', interpolation=None, vmin=x3.min, vmax=x3.max)
+img2 = ax2.imshow(x1.real, extent=[0, h, 0, w], origin='lower', cmap='gray', interpolation=None, vmin=x1.min, vmax=x1.max)
+img3 = ax3.imshow(x2.real, extent=[0, h, 0, w], origin='lower', cmap='gray', interpolation=None, vmin=x2.min, vmax=x2.max)
+
 lines = []
-for ydata, ax in zip(ydatas.T, axes):
+for ydata, ax in zip(ydatas.T, axes_stats):
     lines.append(ax.plot(xdata[:i], ydata[:i]))
+line1, = ax6.plot(x3.mag.flatten())
+point1, = ax6.plot(peak, x3.max, 'ro')
+
 
 def update(x, y):
     global i
@@ -130,24 +139,27 @@ def update(x, y):
     x3 = signal(x3)
 
     # update data tracking
-    ydatas[i%100, :] = [x3.max, x3.mean, x3.std, x3.var]
+    ydatas[i%n_points, :] = update_ydatas(x3)
 
     # calc shifts
     a1, a2 = m1-n1, m2-n2 # actual shift
     e2, e1 = np.where(x3.mag == np.max(x3.mag)) # estimated shift
     e1, e2 = e1[0] - int(w/2), e2[0] - int(h/2) # adjusted for center origin plot
+    peak = np.where(x3.mag.flatten() == x3.max)[0]
 
     # update plots
     box2.set_xy((m1, m2))
-    img2.set_data(x2.real)
-    img3.set_data(x3.mag)
-    for ydata, line, ax in zip(ydatas.T, lines, axes):
-        line[0].set_data(xdata[:i%100], ydata[:i%100])
-        ax.set_ylim(0, np.max(ydata)*2)
+    img1.set_data(x3.mag)
+    img3.set_data(x2.real)
+    for ydata, line, ax in zip(ydatas.T, lines, axes_stats):
+        line[0].set_data(xdata[:i%n_points], ydata[:i%n_points])
+    line1.set_ydata(x3.mag.flatten())
+    point1.set_data(peak, x3.max)
     ax0.set_title(f'Scene\nActual Shift = {a1, a2}')
-    ax3.set_title(f'Motion Estimate\nEstimated Shift = {e1, e2}')
+    ax1.set_title(f'Motion Estimate\nEstimated Shift = {e1, e2}')
+    ax6.set_title('$Flattened x_{3mag}$ \n'f'Peak at: {peak}')
 
-    fig.canvas.draw_idle()
+    fig1.canvas.draw_idle()
 
 
 class MouseButton():
