@@ -1,10 +1,6 @@
 import numpy as np
-import torch
 import os
 from PIL import Image
-import matplotlib
-import matplotlib.pyplot as plt
-matplotlib.use("Qt5Agg")
 
 
 # Numpy / Torch Stuff
@@ -30,10 +26,10 @@ def stats(x, var_name="var", ddof=1):
         x = np.asarray(x).astype(np.float32)
 
         print(f"\n{var_name} stats:")
-        print(f"max:  {np.max(x):.4f}")
-        print(f"min:  {np.min(x):.4f}")
+        print(f"max : {np.max(x):.4f}")
+        print(f"min : {np.min(x):.4f}")
         print(f"mean: {np.mean(x):.4f}")
-        print(f"std:  {np.std(x, ddof=ddof):.4f}")
+        print(f"std : {np.std(x, ddof=ddof):.4f}")
 
     except Exception as ex:
         print(ex)
@@ -116,3 +112,48 @@ def resize_pil(image_pil, factor, resample=Image.NEAREST):
     image_pil = image_pil.resize((width, height), resample)
 
     return image_pil
+
+
+class Cyclic_Data():
+    '''Class to iterate and update an array cyclically.
+    Example: n iterations will reach the end of an array of length n. On the next iteration (n+1), the first value (0-index) of the array will be accessed'''
+    def __init__(self, n_points, n_data):
+
+        # data array, index
+        data = np.zeros((n_points, n_data))
+        i = -1
+
+        # assign attributes
+        self.n_points = n_points
+        self.i = i
+        self.data = data
+
+    def update(self, data_list):
+        i = self._nexti()
+        self.data[i, :] = data_list
+
+    def _nexti(self):
+        self.i += 1
+        self.i = self.i % self.n_points
+        return self.i
+
+
+class Sequential_Data():
+    def __init__(self, n_points, n_data):
+
+        # data array, index
+        data = np.zeros((n_points, n_data))
+        i = -1
+
+        # assign attributes
+        self.n_points = n_points
+        self.i = i
+        self.data = data
+
+    def update(self, data_list):
+        i = self._nexti()
+        self.data[i, :] = data_list
+
+    def _nexti(self):
+        self.i += 1
+        return self.i
