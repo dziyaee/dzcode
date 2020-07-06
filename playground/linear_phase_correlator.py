@@ -11,8 +11,9 @@ from scipy.signal import windows
 # dzlib
 # from dzlib.signal_processing.signals import signal
 from dzlib.signal_processing.signals import Signal
-from dzlib.signal_processing.utils import phase_correlation2d, window2d
+from dzlib.signal_processing.utils import phase_correlation, window2d
 from dzlib.common.utils import Cyclic_Data
+from dzlib.common.devices import MouseButton
 
 # matplotlib
 import matplotlib.pyplot as plt
@@ -85,7 +86,7 @@ x2 = SignalCoords(x2, (m1, m2))
 
 # image processing
 X1, X2 = fft2(x1.arr), fft2(x2.arr)
-x3 = phase_correlation2d(X1, X2) # returns the normalized cross-correlation between X1 and X2
+x3 = phase_correlation(X1, X2) # returns the normalized cross-correlation between X1 and X2
 x3 = fftshift(x3)
 x3 = Signal(x3)
 
@@ -178,7 +179,7 @@ def update(x, y):
 
     # image processing
     X2 = fft2(x2.arr)
-    x3 = phase_correlation2d(X1, X2) # returns the normalized cross-correlation between X1 and X2
+    x3 = phase_correlation(X1, X2) # returns the normalized cross-correlation between X1 and X2
     x3 = fftshift(x3)
     x3 = Signal(x3)
 
@@ -215,11 +216,6 @@ def update(x, y):
     ax7.set_title('$Flattened x_{3mag}$')
 
     fig1.canvas.draw_idle()
-
-
-class MouseButton():
-    def __init__(self, isdown=False):
-        self.isdown = isdown
 
 LMB = MouseButton(isdown=False)
 
