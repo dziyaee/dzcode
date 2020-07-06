@@ -30,7 +30,6 @@ class Signal():
     array = property(_getarray, _setarray, _delarray)
 
 
-
 class SWP2d():
     ''' Scanning Window Processor (SWP)2d Class. Simulates a 2d scan of a 4d Image signal of shape (N x D x H x W) along the last 2 dimensions (H, W). Array Shape Convention is as follows:
         N or 'num' represents the Number of 1d, 2d, or 3d tensors stored in the array.
@@ -292,6 +291,12 @@ class SWP2d():
         return kr2row
 
 
+    def kr2cols(self):
+        kr2col = self.kernel.array.reshape(-1, 1)
+        kr2col = Signal(kr2col)
+        return kr2col
+
+
     def init_kernel(self, kernel):
         ''' Function to initialize a Kernel Signal object after passing shape checks
 
@@ -366,6 +371,12 @@ class SWP2d():
 
         return output
 
+    def MAE(self, kernel):
+        self.kernel = self.init_kernel(kernel)
+        self.kr2col = self.kr2cols()
+        output = np.mean(np.abs(self.im2col.array - self.kr2col.array), axis=0)
+        output = Signal(output)
+        return output
 
     def median(self):
         ''' Function to perform a Median Filter of the Image. This function has no Kernels, so output D = 1
