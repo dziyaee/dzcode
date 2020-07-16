@@ -23,16 +23,23 @@ class Hough():
         self.n_points = n_points
         self.max_distance = max_distance
 
-    def transform(self, n_thetas=181, theta_min=-90, theta_span=180, n_rhos_multiplier=2):
+
+    def transform(self, rho_res=1, theta_res=1, rho_lims=None, theta_lims=None):
+
+        # ranges
         # rhos
         D = self.max_distance
-        parity = (D * n_rhos_multiplier) % 2
-        i = int(not(parity))
-        n_rhos = i + D * n_rhos_multiplier # add 1 to have equal amount of negatives and positives around zero
-        rho_range = np.linspace(-D, D, n_rhos)
+        if rho_lims is None:
+            rho_min, rho_max = -D, D
+        else:
+            rho_min, rho_max = rho_lims
+        rho_range = np.arange(rho_min, rho_max + rho_res, rho_res)
+        n_rhos = rho_range.size
 
         # thetas
-        theta_range = np.linspace(theta_min, theta_min + theta_span, n_thetas) * (np.pi/180)
+        theta_min, theta_max = theta_lims
+        theta_range = np.arange(theta_min, theta_max + theta_res, theta_res) * (np.pi / 180)
+        n_thetas = theta_range.size
 
         # compute rhos matrix via dot product of theta basis matrix and point coords matrix
         ycoords, xcoords = self.point_coords
@@ -138,7 +145,7 @@ if __name__ == "__main__":
     hough.compute_lines()
     print(hough.n_lines)
     print(hough.rhos)
-    print(hough.thetas*(180/pi))
+    print(hough.thetas*(180/np.pi))
 
     fig, ax = plt.subplots(nrows=1, ncols=2)
     ax1, ax2 = ax
