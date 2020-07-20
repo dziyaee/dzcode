@@ -157,3 +157,19 @@ class Sequential_Data():
     def _nexti(self):
         self.i += 1
         return self.i
+
+
+def quantize(x, bin_min, bin_max, bin_spacing):
+    '''Function that quantizes values in an array to values in evenly-spaced bins defined by the minimum and maximum bin intervals, and the bin spacing. The bins are created using the numpy function arange, passing as arguments the min bin interval, max bin interval + spacing, and spacing. '''
+    xmin, xmax = bin_min, bin_max
+    dx = bin_spacing
+    bins = np.arange(xmin, xmax + dx, dx)
+    n = bins.size
+
+    # offset array values by bin minimum to align zero index with first value in range
+    x = x - xmin
+
+    # calculate rounded quotient of array values and bin spacing to get indices of binned values
+    i = np.round(x / dx).astype(np.int32)
+    i = np.clip(i, 0, n-1)
+    return i
