@@ -1,185 +1,174 @@
 import numpy as np
+from dzlib.common.utils import quantize
 
 
 class Hough():
-    # self.fx = lambda rho, theta, x: (rho - x * np.cos(theta)) / np.sin(theta)
-    # self.fy = lambda rho, theta, y: (rho - y * np.sin(theta)) / np.cos(theta)
-    ''' Hough Transform class. Performs the hough transform on a binary image to detect lines fitting specified rho, theta parameters within a specified threshold of occurences'''
-    def __init__(self, image):
-        ''' Initializes the image input to the Hough class'''
-        # set image
+    def __init__(self, image, rho_step, theta_step, theta_lims=(-90, 90)):
         self.set_image(image)
+        rho_lims = -self.max_distance, self.max_distance
+        self.set_ranges(rho_step, rho_lims, theta_step, theta_lims)
 
     def set_image(self, image):
-        ''' Finds the coords of the peaks of the image input, as well as the maximum distance from the origin'''
 
+        # max distance
         height, width = image.shape
-
-        # max distance from origin
         max_distance = np.sqrt(height ** 2 + width ** 2)
         max_distance = int(np.ceil(max_distance))
 
-        # find sorted unique values and counts, assert only 2 values (binary)
-        unique_values, counts = np.unique(image, return_counts=True)
-        assert unique_values.size == 2
-        low, high = unique_values
-        n_lows, n_highs = counts
+        # coordinates of all points in image
+        ycoords, xcoords = np.where(image == 1)
+        n_points = ycoords.size
 
-        # get indices of high values
-        point_coords = np.where(image == high)
-
-        self.point_coords = point_coords
-        self.n_points = n_highs
         self.max_distance = max_distance
+        self.ycoords = ycoords
+        self.xcoords = xcoords
+        self.n_points = n_points
 
-    def transform(self, rho_res=1, theta_res=1, rho_lims=None, theta_lims=None):
-        ''' Perform a vectorized hough transform operation on the set of high points of the binary image to result in a hough accumulator matrix'''
+    def set_ranges(self, rho_step, rho_lims, theta_step, theta_lims):
 
-        # rho range
-        D = self.max_distance
-        if rho_lims is None:
-            rho_min, rho_max = -D, D
-        else:
-            rho_min, rho_max = rho_lims
-        rho_range = np.arange(rho_min, rho_max + rho_res, rho_res)
-        n_rhos = rho_range.size
+        # rho range (d = distance)
+        Dmin, Dmax = rho_lims
+        dx = rho_step
+        rho_range = np.arange(Dmin, Dmax + dx, dx)
 
-        # theta range
-        if theta_lims is None:
-            theta_min, theta_max = -90, 90
-        else:
-            theta_min, theta_max = theta_lims
-        theta_range = np.arange(theta_min, theta_max + theta_res, theta_res) * (np.pi / 180)
-        n_thetas = theta_range.size
+        # theta range (a = angle)
+        theta_lims = np.clip(theta_lims, -90, 90)
+        Amin, Amax = theta_lims
+        da = theta_step
+        theta_range = np.arange(Amin, Amax + da, da) * (np.pi/180)
 
-        # compute rhos matrix via dot product of theta basis matrix and point coords matrix
-        ycoords, xcoords = self.point_coords
-        theta_basis = np.array([np.cos(theta_range), np.sin(theta_range)]).T # shape (n_thetas x 2)
-        point_coords = np.array([xcoords, ycoords]) # (2 x n_points)
-        rhos = np.matmul(theta_basis, point_coords) # (n_thetas x n_points)
-
-        # compute rhos indices matrix by binning values in rhos matrix to values in rho range
-        rhos_ = np.digitize(rhos, rho_range, right=True) # (n_thetas x n_points)
-
-        # iterate through rows of rhos matrix. Each row corresponds to a single theta value, each column corresponds to a single high point in the binary image. By counting unique rho values in each row and their count, we are left with the number of points that intersect at each (rho, theta) pair
-        accumulator = np.zeros((n_rhos, n_thetas)) # (n_rhos x n_thetas)
-        coords_list = [[[] for j in range(n_thetas)] for i in range(n_rhos)]
-        for theta_index, rhos in enumerate(rhos_):
-            rho_uniques, rho_counts = np.unique(rhos, return_counts=True)
-            # print(rho_uniques, rho_counts)
-            accumulator[rho_uniques, theta_index] = rho_counts
-            i = 0
-            sorted_rhos_indices = np.argsort(rhos)
-            for rho_unique, rho_count in zip(rho_uniques, rho_counts):
-                point_indices = sorted_rhos_indices[i: i+rho_count]
-                # print(f"{rho_count} points on line {rho_unique, theta_index} with indices {point_indices}")
-                i += rho_count
-                coords_list[rho_unique][theta_index] = point_indices
-
+        self.rho_step = dx
         self.rho_range = rho_range
+        self.n_rhos = rho_range.size
+
+        self.theta_step = da
         self.theta_range = theta_range
+        self.n_thetas = theta_range.size
+
+    def transform(self, threshold):
+
+        # theta basis matrix (n_thetas x 2)
+        theta_range = self.theta_range
+        theta_basis = np.array([np.cos(theta_range), np.sin(theta_range)]).T
+
+        # coords matrix (2 x n_points)
+        xcoords, ycoords = self.xcoords, self.ycoords
+        points = np.array([xcoords, ycoords])
+
+        # rho matrix (n_thetas x n_points)
+        rhos = np.matmul(theta_basis, points)
+        Dmin, Dmax = -self.max_distance, self.max_distance
+        dx = self.rho_step
+        rhos = quantize(rhos, Dmin, Dmax, dx) # returns indices
+
+        # init hough accumulator (zeros 2d matrix) and colinear points (empty 2d list)
+        n_rhos, n_thetas = self.n_rhos, self.n_thetas
+        accumulator = np.zeros((n_rhos, n_thetas))
+        colinear_points = [[[] for theta in range(n_thetas)] for rho in range(n_rhos)]
+
+        # iterate through rows of rhos and populate accumulator with unique rho counts
+        for theta_index, rhos_ in enumerate(rhos):
+            unique_rhos, counts = np.unique(rhos_, return_counts=True)
+            accumulator[unique_rhos, theta_index] = counts
+
+            # iterate through each rho value and populate colinear points with list of colinear point indices
+            i = 0
+            rhos_ = np.argsort(rhos_) # returns indices
+            for unique_rho, count in zip(unique_rhos, counts):
+                points = rhos_[i: i + count] # returns indices
+                colinear_points[unique_rho][theta_index] = points
+                i += count
+
+        # get rho, thetas where accumulator threshold is met
+        rhos, thetas = self.get_peaks(accumulator, threshold)
+
+        # get lines from rhos, thetas, colinear points
+        lines = self.get_lines(rhos, thetas, colinear_points)
+        n_lines = len(lines)
+
         self.accumulator = accumulator
-        self.coords_list = coords_list
-
-    def find_peaks(self, threshold_min=0.5, threshold_max=1):
-        ''' Finds the peaks in the hough accumulator matrix that lie within a specified threshold range as a percentage of the maximum value'''
-        accumulator = self.accumulator
-        max_intersections = np.max(accumulator)
-        threshold_min *= max_intersections # min value
-        threshold_max *= max_intersections # max value
-
-        peaks = np.where((accumulator >= threshold_min) & (accumulator <= threshold_max))
-        n_lines = peaks[0].size
-
-        self.peaks = peaks
+        self.colinear_points = colinear_points
+        self.lines = lines
         self.n_lines = n_lines
 
-    def compute_lines(self):
-        ''' Finds the lines corresponding to each rho, theta pair in peaks'''
-        peaks = self.peaks
-        rho_indices, theta_indices = peaks
+    def get_peaks(self, accumulator, threshold):
+        threshold *= np.max(accumulator)
+        rhos, thetas = np.where(accumulator >= threshold)
 
-        rho_range = self.rho_range
+        return rhos, thetas
+
+    def get_lines(self, rhos, thetas, colinear_points):
+
+        # get list of all points xcoords and ycoords
+        xcoords, ycoords = self.xcoords, self.ycoords
+
+        # returns signs of slopes of lines defined by the normal-coord thetas within span of quadrants 4 and 1 (-90 to +90)
         theta_range = self.theta_range
-        rhos = rho_range[rho_indices]
-        thetas = theta_range[theta_indices]
+        slope_signs = [-1 if theta >= 0 else 1 for theta in theta_range[thetas]]
 
-        # for rho, theta in zip(rhos, thetas):
-            # print(rho, theta)
+        # iterate through rho, theta, and slope sign arrays and populate lines list with tuple of (x, y) coordinate pairs
+        lines = []
+        for rho, theta, i in zip(rhos, thetas, slope_signs):
 
-        coords_list = self.coords_list
-        point_coords = self.point_coords
-        ycoords, xcoords = point_coords
-        # print(f"xcoords_: {xcoords_}")
-        # print(f"ycoords_: {ycoords_}")
-        # print(f"POINT COORDS: {point_coords}")
-        lines_coords = []
-        for rho_index, theta_index in zip(rho_indices, theta_indices):
-            # print("-" * 100)
-            rho = rho_range[rho_index]
-            theta = theta_range[theta_index] * (180/np.pi)
-            point_indices = coords_list[rho_index][theta_index]
-            point_min = np.min(point_indices)
-            point_max = np.max(point_indices)
-            xmin, ymin = xcoords[point_min], ycoords[point_min]
-            xmax, ymax = xcoords[point_max], ycoords[point_max]
-            # print(xcoords)
-            # print(ycoords)
-            # print(point_indices)
-            # print(xcoords)
-            # print(ycoords)
-            # print("-" * 100)
-            # xmin, xmax = np.min(xcoords), np.max(xcoords)
-            # ymin, ymax = np.min(ycoords), np.max(ycoords)
-            lines_coords.append((xmin, xmax, ymin, ymax))
-            # print(f"Rho: {rho}, Theta: {theta}, Points: {(xmin, ymin), (xmax, ymax)}")
-        # print("-" * 100)
-        lines_coords = list(set(lines_coords))
-        # print(lines_coords)
-        lines_xcoords = []
-        lines_ycoords = []
-        for line_coords in lines_coords:
-            lines_xcoords.append(line_coords[:2])
-            lines_ycoords.append(line_coords[2:])
-        # print(lines_xcoords)
-        # print(lines_ycoords)
+            # points at current (rho, theta) pair
+            points = colinear_points[rho][theta]
+            xs = xcoords[points]
+            ys = ycoords[points]
 
-        self.lines_xcoords = lines_xcoords
-        self.lines_ycoords = lines_ycoords
-        self.rho_indices = rho_indices
-        self.theta_indices = theta_indices
-        self.rhos = rhos
-        self.thetas = thetas
+            # get min and max (x, y) coords for points defining longest segment
+            xmin, xmax = np.min(xs), np.max(xs)
+            ymin, ymax = np.min(ys), np.max(ys)
+
+            # reverse y coords if slope is negative (because ymin by definition will pair with xmax in a negative slope line)
+            xs = [xmin, xmax]
+            ys = [ymin, ymax][::i] # if i = -1, reverses list, if i = +1, preserves order
+
+            lines.append((xs, ys))
+
+        return lines
 
 
+# test
 if __name__ == "__main__":
-    import numpy as np
     from PIL import Image
     import os
     from dzlib.signal_processing.sweep2d import SWP2d
     import matplotlib as mpl
     import matplotlib.pyplot as plt
+    from matplotlib.gridspec import GridSpec
 
     mpl.use("Qt5Agg")
 
-    # load grayscale (gs) image
-    image_path = '/'.join((os.getcwd(), 'data/image9.png'))
-    image = Image.open(image_path).convert('L')
-    height, width = image.size
-    k = 2
-    image = image.resize((int(height/k), int(width/k)))
-    height, width = image.size
-    image_gs = np.asarray(image).astype(np.float32)
-    # image_gs = image_gs[30:500, 86:811]
-    image_gs = np.flip(image_gs, axis=(0))
-    height, width = image_gs.shape
+    # Image Params
+    k = 1 # scale factor for resizing of original image
+    z = 0.04 # value around mean to set to zero for binarization of edge map
 
-    # normalize image
+    # Hough Transform Params
+    rho_step=1
+    theta_step=1
+    theta_min = -90
+    theta_max = 90
+    threshold= 0.45
+
+    # load grayscale (gs) image
+    print(f"\nLoading and resizing image...")
+    image_path = '/'.join((os.getcwd(), 'data/image7.png'))
+    image = Image.open(image_path).convert('L')
+    width, height = image.size
+    image = image.resize((int(width/k), int(height/k)))
+    image_gs = np.asarray(image).astype(np.float32)
+    image_gs = np.flip(image_gs, axis=(0))
+    print(f"original image shape: {height, width}")
+    print(f"resizing scale factor: {k}")
+    print(f"resized image shape:   {image_gs.shape}")
+
+    # normalize gs image
     image_gs = image_gs - np.min(image_gs)
     image_gs = image_gs / np.max(image_gs)
 
-    print("Beginning Edge Detection...")
     # edge detection (Sobel Operator)
+    print("\nEdge Detection...")
+    height, width = image_gs.shape
     edge_detector = SWP2d(image=image_gs.reshape(1, 1, height, width), kernel_size=(3, 3), mode='none')
     gx = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]]) # vertical edge kernel
     gy = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]]) # horizontal edge kernel
@@ -192,107 +181,63 @@ if __name__ == "__main__":
     # normalize edge map
     edges = edges - np.min(edges)
     edges = edges / np.max(edges)
+    mean = np.mean(edges)
+    print(f"Edge Map Mean: {mean:.3f}")
 
+    print(f"\nBinarizing Edge Map...")
     # binarize edge map
     image_bn = edges.copy()
-    mean = np.mean(image_bn)
-    std = np.std(image_bn)
-    z = 1 # std multiplier
-    image_bn[(image_bn < mean - z*std)] = 1
-    image_bn[(image_bn >= mean - z*std) & (image_bn <= mean + z*std)] = 0
-    image_bn[(image_bn > mean + z*std)] = 1
+    image_bn[(image_bn < mean - z)] = 1
+    image_bn[(image_bn >= mean - z) & (image_bn <= mean + z)] = 0
+    image_bn[(image_bn > mean + z)] = 1
     image = image_bn
     n_points = image[image == 1].size
-    print("Finished Edge Detection...")
+    print(f"Values between {(mean-z):.3f} and {(mean+z):.3f} set to zero. All other values set to 1")
+    print(f"number of non-zero points: {n_points}")
 
-    # image = np.zeros((50, 50))
-    # image[10:40, 10:40] = np.eye(30)
-    # image[10, 10:40] = 1
-    # image[10:40, 40] = 1
-    # image[10:30, 10] = 1
-    # n_points = image[image == 1].size
+    print("\nHoughing...")
+    hough = Hough(image=image, rho_step=rho_step, theta_step=theta_step, theta_lims=(theta_min, theta_max))
+    hough.transform(threshold=threshold)
+    print(f"number of lines: {hough.n_lines}")
 
-    # image_path = '/'.join((os.getcwd(), 'data/image8.png'))
-    # image = Image.open(image_path).convert('L')
-    # height, width = image.size
-    # image_gs = np.asarray(image).astype(np.float32)
-    # # image_gs = image_gs[25:500, 86:811]
-    # image_gs = np.flip(image_gs, axis=(0))
-    # height, width = image_gs.shape
+    print("\nPlotting...")
+    fig = plt.figure(1)
+    gs = GridSpec(nrows=2, ncols=8)
 
-    # # normalize image
-    # image_gs = image_gs - np.min(image_gs)
-    # image_gs = image_gs / np.max(image_gs)
-    # image = image_gs
+    ax1 = fig.add_subplot(gs[0, 0:2])
+    ax2 = fig.add_subplot(gs[1, 0:2])
 
-    # # binarize
-    # image[image == 0] = 2
-    # image[image == 1] = 0
-    # image[image == 2] = 1
-    # n_points = image[image == 1].size
+    ax3 = fig.add_subplot(gs[0, 2:4])
+    ax4 = fig.add_subplot(gs[1, 2:4])
 
-    print(f"n_points: {n_points}")
-    print(f"image shape: {image.shape}")
+    ax5 = fig.add_subplot(gs[:, 5:])
 
-    print("Beginning Hough Transform...")
-    hough = Hough(image)
-    hough.transform(rho_res=1, theta_res=0.5, theta_lims=(-25, 25))
-    hough.find_peaks(threshold_min=0.7, threshold_max=1)
-    hough.compute_lines()
-    print("Finished Hough Transform...")
-    print(f"n lines: {hough.n_lines}")
-    lines_xcoords = hough.lines_xcoords
-    lines_ycoords = hough.lines_ycoords
+    ax1.imshow(image_gs,    cmap='gray',    origin='lower', interpolation=None)
+    ax2.imshow(image_gs,    cmap='gray',    origin='lower', interpolation=None)
 
-    # fig, ax = plt.subplots(nrows=1, ncols=3)
-    # ax1, ax2, ax3 = ax
-    # ax1.hist(hough.accumulator.flatten(), bins=100)
-    # ax2.imshow(hough.accumulator)
-    # ax3.imshow(image_bn, cmap='binary', origin='lower')
-    # # ax3.imshow(image, cmap='binary', origin='lower')
-    # for line_xcoords, line_ycoords in zip(lines_xcoords, lines_ycoords):
-    #     ax3.plot(line_xcoords, line_ycoords, color='r')
+    ax3.imshow(image_bn,    cmap='binary',  origin='lower', interpolation=None)
+    ax4.imshow(image_bn,    cmap='binary',  origin='lower', interpolation=None)
+    ax3.tick_params(left=False, labelleft=False)
+    ax4.tick_params(left=False, labelleft=False)
 
-    print("Beginning Plotting...")
-    fig, ax = plt.subplots(nrows=2, ncols=3)
-    ax1, ax2, ax3, ax4, ax5, ax6 = ax.flatten()
-    # ax1.imshow(image_bn, cmap='binary', origin='lower')
-    ax1.imshow(image_gs, cmap='gray', origin='lower', interpolation=None)
-    ax2.imshow(edges, cmap='gray', origin='lower', interpolation=None)
-    ax3.imshow(image_bn, cmap='binary', origin='lower', interpolation=None)
-    ax4.imshow(image_gs, cmap='gray', origin='lower', interpolation=None)
-    ax5.imshow(edges, cmap='gray', origin='lower', interpolation=None)
-    ax6.imshow(image_bn, cmap='binary', origin='lower', interpolation=None)
+    for xcoords, ycoords in hough.lines:
+        ax2.plot(xcoords, ycoords, color='forestgreen')
+        ax4.plot(xcoords, ycoords, color='forestgreen')
 
-    for line_xcoords, line_ycoords in zip(lines_xcoords, lines_ycoords):
-        ax4.plot(line_xcoords, line_ycoords, color='g')
-        ax5.plot(line_xcoords, line_ycoords, color='g')
-        ax6.plot(line_xcoords, line_ycoords, color='g')
+    ax5.imshow(hough.accumulator, interpolation=None, extent=[theta_min, theta_max, hough.max_distance, -hough.max_distance])
+    ax5.set_aspect('auto')
+    ax5.tick_params(left=False, labelleft=False, right=True, labelright=True)
+    ax5.set_xlabel(r"Angle from x-axis ($\theta$)")
+    ax5.set_ylabel(r"Displacement from Origin ($\rho$)", rotation=90)
+    ax5.yaxis.set_label_position('right')
 
-    ax1.set_title("Grayscale Original Image")
-    ax2.set_title("Grayscale Edge Map")
-    ax3.set_title("Binary Edge Map")
+    fig.suptitle("Edge Detection via Sobel Operator\nLine Detection via Hough Transform")
+    ax1.set_title("Grayscale (GS)\nOriginal Image")
+    ax2.set_title("With Hough lines overlay")
+    ax3.set_title("Binary (BN)\nEdge Map")
+    ax4.set_title("With Hough lines overlay")
+    ax5.set_title("Hough Accumulator")
 
-    fig, ax = plt.subplots(1)
-    ax.imshow(hough.accumulator, interpolation=None)
-    ax.set_aspect('auto')
-    ax.set_title("Hough Accumulator")
-    print("Finished Plotting...")
-
-
+    fig.subplots_adjust(left=0.05, right=0.9, wspace=0)
+    print(r"Complete")
     plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
