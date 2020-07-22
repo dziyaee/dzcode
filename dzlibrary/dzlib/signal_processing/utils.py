@@ -95,14 +95,3 @@ def im2col(xdims, kdims, sdims):
     # add offset to window via broadcasting to create final indices
     indices = window.T + offset
     return indices
-
-# inputs
-input_ = np.random.randint(0, 9, (2, 6, 6))
-kernel = np.random.randint(0, 1, (2, 3, 3))
-stride = (2, 2)
-
-indices = im2col(input_.shape, kernel.shape, stride)
-output = np.take(input_, indices)
-print(input_)
-print(output)
-
