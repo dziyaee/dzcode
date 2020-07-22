@@ -56,3 +56,53 @@ def add_gaussian_noise(x, noise_mean=0, noise_std=1, return_snr=False):
             return noisy_x, snr
         return noisy_x
 
+
+def im2col(xdims, kdims, sdims):
+    # standardize input shape sizes to 3 to represent channel, height, width dims
+    dims = [xdims, kdims, sdims]
+    size = 3
+    new = []
+    for dim in dims:
+        dim = np.asarray(dim)
+        diff = size - dim.size
+        value = [1] * diff
+        dim = np.insert(dim, 0, value)
+        new.append(dim)
+
+    xdim, kdim, sdim = new
+
+    # channel, height, width dimensions of input, window, stride
+    xc, xh, xw = xdim
+    kc, kh, kw = kdim
+    _, sh, sw = sdim
+
+    # first window index vector
+    deps = np.array(np.arange(kc), ndmin=2) * xh * xw
+    rows = np.array(np.arange(kh), ndmin=2) * xw
+    cols = np.array(np.arange(kw), ndmin=2)
+    window = np.array((deps.T + rows).ravel(), ndmin=2)
+    window = np.array((window.T + cols).ravel(), ndmin=2)
+
+    # number of windows along rows and cols
+    nh = int(np.floor((xh - kh) / sh) + 1)
+    nw = int(np.floor((xw - kw) / sw) + 1)
+
+    # index offset vector
+    rows = np.array(np.arange(nh), ndmin=2) * sh * xw
+    cols = np.array(np.arange(nw), ndmin=2) * sw
+    offset = np.array((rows.T + cols).ravel(), ndmin=2)
+
+    # add offset to window via broadcasting to create final indices
+    indices = window.T + offset
+    return indices
+
+# inputs
+input_ = np.random.randint(0, 9, (2, 6, 6))
+kernel = np.random.randint(0, 1, (2, 3, 3))
+stride = (2, 2)
+
+indices = im2col(input_.shape, kernel.shape, stride)
+output = np.take(input_, indices)
+print(input_)
+print(output)
+
