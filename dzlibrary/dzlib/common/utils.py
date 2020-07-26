@@ -1,6 +1,8 @@
 import numpy as np
 import os
 from PIL import Image
+import time
+import functools
 
 
 # Numpy / Torch Stuff
@@ -173,3 +175,16 @@ def quantize(x, bin_min, bin_max, bin_spacing):
     i = np.round(x / dx).astype(np.int32)
     i = np.clip(i, 0, n-1)
     return i
+
+
+def timer(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        start_time = time.perf_counter()
+        value = func(*args, **kwargs)
+        stop_time = time.perf_counter()
+        run_time = stop_time - start_time
+        print(f"{func.__name__!r:15} Time: {(run_time * 1e3):.3f} ms")
+        return value
+    return wrapper
+
