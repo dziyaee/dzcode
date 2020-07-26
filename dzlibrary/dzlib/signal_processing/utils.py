@@ -70,11 +70,13 @@ def im2col(xdims, kdims, sdims):
         new.append(dim)
 
     xdim, kdim, sdim = new
+    sdim = [1 if x == 0 else x for x in sdim]
 
     # channel, height, width dimensions of input, window, stride
-    xc, xh, xw = xdim
-    kc, kh, kw = kdim
-    _, sh, sw = sdim
+    xc, xh, xw = xdim[-size:]
+    kc, kh, kw = kdim[-size:]
+    _, sh, sw = sdim[-size:]
+    assert xc == kc
 
     # first window index vector
     deps = np.array(np.arange(kc), ndmin=2) * xh * xw
