@@ -1,6 +1,6 @@
 import numpy as np
 from dzlib.signal_processing.utils import im2col
-from dzlib.signal_processing.signals import Dims
+from dzlib.common.data import Shape
 
 
 class Sweep2d():
