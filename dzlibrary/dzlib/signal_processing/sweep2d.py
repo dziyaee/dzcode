@@ -4,17 +4,17 @@ from dzlib.signal_processing.signals import Dims
 
 
 class Sweep2d():
-    def __init__(self, image_shape, kernel_shape, pad=0, stride=1, mode='user'):
+    def __init__(self, image_shape, kernel_shape, padding=0, stride=1, mode='user'):
         # convert all input shapes to tuples
-        shapes = [image_shape, kernel_shape, pad, stride]
+        shapes = [image_shape, kernel_shape, padding, stride]
         shapes = [(int(shape),) if isinstance(shape, (int, float)) else tuple(shape) for shape in shapes]
-        image_shape, kernel_shape, pad, stride = shapes
+        image_shape, kernel_shape, padding, stride = shapes
 
-        # expand image, kernel shapes to 4d and pad, stride shapes to 2d
+        # expand image, kernel shapes to 4d and padding, stride shapes to 2d
         expand = lambda x, ndim, fill_value: (*((fill_value,) * (ndim - len(x))), *x)[-ndim:]
         image_shape = expand(image_shape, 4, 1)
         kernel_shape = expand(kernel_shape, 4, 1)
-        pad = expand(pad, 2, pad[0])
+        padding = expand(padding, 2, padding[0])
         stride = expand(stride, 2, stride[0])
 
         # create Dims objects out of shapes for standardized accessing of shape dimensions (num, depth, height, width)
@@ -22,8 +22,8 @@ class Sweep2d():
         kk = Dims(kernel_shape)
 
         # return padding and stride based on selected mode and create Dims objects (height, width)
-        pad, stride = self._mode(xx, kk, pad, stride, mode)
-        pp = Dims(pad)
+        padding, stride = self._mode(xx, kk, padding, stride, mode)
+        pp = Dims(padding)
         ss = Dims(stride)
 
         # calc padded image shape and init array of zeros
@@ -31,7 +31,7 @@ class Sweep2d():
         padded_width = int(xx.width + 2 * pp.width)
         padded_shape = (xx.num, xx.depth, padded_height, padded_width)
         xx = Dims(padded_shape)
-        padding = np.zeros((xx.shape)).astype(np.float32)
+        padded = np.zeros((xx.shape)).astype(np.float32)
 
         # ensure kernel and padded image shapes are valid
         if kk.depth != xx.depth:
@@ -58,14 +58,14 @@ class Sweep2d():
         self.yy = yy
 
         # assign arrays
-        self.padding = padding
+        self.padded = padded
         self.indices = indices
 
-    def _mode(self, image_Dims, kernel_Dims, pad, stride, mode):
+    def _mode(self, image_Dims, kernel_Dims, padding, stride, mode):
         modes = ['user', 'full', 'keep']
         xx = image_Dims
         kk = kernel_Dims
-        pad_height, pad_width = pad
+        pad_height, pad_width = padding
         stride_height, stride_width = stride
 
         if mode not in modes:
@@ -73,15 +73,15 @@ class Sweep2d():
 
         else:
 
-            # user mode: no change to default or input pad and stride values
+            # user mode: no change to default or input padding and stride values
             if mode == 'user':
                 pass
 
-            # full mode: stride = 1, pad input by kernel size - 1
+            # full mode: stride = 1, padding =  kernel size - 1
             elif mode == 'full':
                 pad_height = kk.height - 1
                 pad_width = kk.width - 1
-                pad = (pad_height, pad_width)
+                padding = (pad_height, pad_width)
 
                 stride_height = 1
                 stride_width = 1
@@ -93,16 +93,16 @@ class Sweep2d():
                 min_pad = lambda x, k, s: (k - s + x * (s - 1)) / 2
                 pad_height = min_pad(xx.height, kk.height, stride_height)
                 pad_width = min_pad(xx.width, kk.width, stride_width)
-                pad = (pad_height, pad_width)
+                padding = (pad_height, pad_width)
 
-        return pad, stride
+        return padding, stride
 
     def correlate2d(self, images, kernels):
         # standardize inputs to 4d
         images = np.array(images, ndmin=4)
         kernels = np.array(kernels, ndmin=4)
 
-        # pad images
+        # padding
         images = self._pad2d(images)
 
         # create im2col matrices
@@ -121,7 +121,7 @@ class Sweep2d():
         images = np.array(images, ndmin=4)
         kernels = np.array(kernels, ndmin=4)
 
-        # pad images
+        # padding
         images = self._pad2d(images)
 
         # create im2col matrices
@@ -139,7 +139,7 @@ class Sweep2d():
         # standardize inputs to 4d
         images = np.array(images, ndmin=4)
 
-        # pad images
+        # padding
         images = self._pad2d(images)
 
         # create im2col matrices
@@ -159,7 +159,7 @@ class Sweep2d():
         # standardize inputs to 4d
         images = np.array(images, ndmin=4)
 
-        # pad images
+        # padding
         images = self._pad2d(images)
 
         # create im2col matrices
@@ -178,7 +178,7 @@ class Sweep2d():
     def _pad2d(self, images):
         xx = self.xx
         pp = self.pp
-        padding = self.padding
+        padded = self.padded
 
         # starting indices, left side bias
         h1 = int(np.floor(pp.height))
@@ -187,8 +187,8 @@ class Sweep2d():
         # ending indices
         h2 = int(np.floor(xx.height - pp.height))
         w2 = int(np.floor(xx.width - pp.width))
-        padding[:, :, h1: h2, w1: w2] = images
-        return padding
+        padded[:, :, h1: h2, w1: w2] = images
+        return padded
 
     def _im2col(self, images):
         indices = self.indices
