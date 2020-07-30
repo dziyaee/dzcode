@@ -1,3 +1,4 @@
+import numpy as np
 
 
 class Array(np.ndarray):
@@ -40,11 +41,12 @@ class Shape:
         if len(shape_) == 0:
             raise ValueError(f"Expected a tuple or list of length > 0, got {len(shape_)}")
 
-        if  not all(isinstance(dim, int) for dim in shape_):
-            raise TypeError(f"Expected only integer elements, got {shape_}")
+        for x in shape_:
+            if not isinstance(x, int):
+                raise TypeError(f"elements in {shape_} must be of type (int), got {type(x)}")
 
-        if not all(dim > 0 for dim in shape_):
-            raise ValueError(f"Expected only positive integer elements, got {shape_}")
+            if not x > 0:
+                raise ValueError(f"elements in {shape_} must be > 0, got {x}")
 
         self._shape = tuple(shape_)
 
