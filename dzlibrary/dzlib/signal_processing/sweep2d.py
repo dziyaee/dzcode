@@ -1,109 +1,141 @@
 import numpy as np
 from dzlib.signal_processing.utils import im2col
 from dzlib.common.data import Shape
+from dzlib.common.utils import timer
 
 
 class Sweep2d():
-    def __init__(self, image_shape, kernel_shape, padding=0, stride=1, mode='user'):
-        # convert all input shapes to tuples
-        shapes = [image_shape, kernel_shape, padding, stride]
-        shapes = [(int(shape),) if isinstance(shape, (int, float)) else tuple(shape) for shape in shapes]
-        image_shape, kernel_shape, padding, stride = shapes
+    def __init__(self, images_shape, kernels_shape, padding=0, stride=1, mode='user'):
+        # convert inputs to tuples and validate against max lengths and min values
+        images_shape = self._totuple(images_shape, 4, 1)
+        kernels_shape = self._totuple(kernels_shape, 4, 1)
+        padding = self._totuple(padding, 2, 0)
+        stride = self._totuple(stride, 2, 1)
 
-        # expand image, kernel shapes to 4d and padding, stride shapes to 2d
-        expand = lambda x, ndim, fill_value: (*((fill_value,) * (ndim - len(x))), *x)[-ndim:]
-        image_shape = expand(image_shape, 4, 1)
-        kernel_shape = expand(kernel_shape, 4, 1)
-        padding = expand(padding, 2, padding[0])
-        stride = expand(stride, 2, stride[0])
+        # expand inputs to max lengths with fill values
+        images_shape = self._expand(images_shape, 4, 1)
+        kernels_shape = self._expand(kernels_shape, 4, 1)
+        padding = self._expand(padding, 2, padding[0])
+        stride = self._expand(stride, 2, stride[0])
 
-        # create Dims objects out of shapes for standardized accessing of shape dimensions (num, depth, height, width)
-        xx = Dims(image_shape)
-        kk = Dims(kernel_shape)
+        # create Shape objects from images_shape and kernels_shape
+        xx = Shape(images_shape)
+        kk = Shape(kernels_shape)
 
-        # return padding and stride based on selected mode and create Dims objects (height, width)
-        padding, stride = self._mode(xx, kk, padding, stride, mode)
-        pp = Dims(padding)
-        ss = Dims(stride)
+        # validate kernels depth against images depth
+        if not kk.depth == xx.depth:
+            raise ValueError(f"Kernel and image depths must be equal, got {kk.depth}, {xx.depth}")
 
-        # calc padded image shape and init array of zeros
-        padded_height = int(xx.height + 2 * pp.height)
-        padded_width = int(xx.width + 2 * pp.width)
-        padded_shape = (xx.num, xx.depth, padded_height, padded_width)
-        xx = Dims(padded_shape)
-        padded = np.zeros((xx.shape)).astype(np.float32)
-
-        # ensure kernel and padded image shapes are valid
-        if kk.depth != xx.depth:
-            raise ValueError(f"Kernel depth ({kk.depth}) must be = image depth ({xx.depth})")
-        if (kk.height > xx.height) or (kk.width > xx.width):
-            raise ValueError(f"Kernel height, width ({kk.height, kk.width}) must be <= image height, width ({xx.height, xx.width})")
-
-        # calc output shape
-        output_height = int(np.floor((xx.height - kk.height) / ss.height) + 1)
-        output_width = int(np.floor((xx.width - kk.width) / ss.width) + 1)
-        output_shape = (xx.num, kk.num, output_height, output_width)
-        yy = Dims(output_shape)
-
-        # im2col indices
-        indices = im2col(xx.shape, kk.shape, ss.shape)
-        im2col_height, im2col_width = indices.shape
-        assert im2col_height == kk.depth * kk.height * kk.width  # these two asserts should always be true
-        assert im2col_width == yy.height * yy.width
-
-        # assign shape objects
-        self.xx = xx
-        self.kk = kk
-        self.pp = pp
-        self.yy = yy
-
-        # assign arrays
-        self.padded = padded
-        self.indices = indices
-
-    def _mode(self, image_Dims, kernel_Dims, padding, stride, mode):
-        modes = ['user', 'full', 'keep']
-        xx = image_Dims
-        kk = kernel_Dims
-        pad_height, pad_width = padding
+        # return padding and stride based on mode
+        padding, stride  = self._mode(xx, kk, padding, stride, mode)
+        padding_height, padding_width = padding
         stride_height, stride_width = stride
 
-        if mode not in modes:
-            raise ValueError(f"mode ({mode}) must be one of: {modes}")
+        # calculate padded dimensions, update images Shape object
+        xdim = lambda x, p: int(x + 2 * p)
+        padded_height = xdim(xx.height, padding_height)
+        padded_width = xdim(xx.width, padding_width)
+        xx.shape = (xx.num, xx.depth, padded_height, padded_width)
 
+        # validate kernels shape against padded images shape
+        if not (kk.height <= xx.height) or not (kk.width <= xx.width):
+            raise ValueError(f"Kernel dimensions must be <= image dimensions, got {kk.height, kk.width}, {xx.height, xx.width}")
+
+        # calculate output dimensions, create output Shape object
+        ydim = lambda x, k, s: int(np.floor((x - k) / s) + 1)
+        output_height = ydim(xx.height, kk.height, stride_height)
+        output_width = ydim(xx.width, kk.width, stride_width)
+        output_shape = (xx.num, kk.num, output_height, output_width)
+        yy = Shape(output_shape)
+
+        # compute im2col indices matrix
+        self.indices = im2col(xx.shape, kk.shape, stride)
+
+        # init padded array and calculate padding indices with left side bias
+        self.padded = np.zeros((xx.shape)).astype(np.float32)
+        self.rows = int(np.floor(padding_height)), int(np.floor(xx.height - padding_height))
+        self.cols = int(np.floor(padding_width)), int(np.floor(xx.width - padding_width))
+
+        # assign Shape objects
+        self.xx = xx
+        self.kk = kk
+        self.yy = yy
+
+        # assign sweep params
+        self.padding = padding
+        self.stride = stride
+
+    @staticmethod
+    def _totuple(input_, max_len, min_val):
+        # convert input_ to tuple if valid
+        if isinstance(input_, int):
+            input_ = (input_,)
+
+        elif isinstance(input_, (list, tuple)):
+            input_ = tuple(input_)
+
+            # validations
+            if len(input_) > 4 or len(input_) == 0:
+                raise ValueError(f"number of elements in {input_} must be between 1 and {max_len}, got {len(input_)}")
+
+        # more validations
         else:
+            raise TypeError(f"{input_} must be of types (list, tuple), got {type(input_)}")
 
+        # a few more validations
+        for x in input_:
+            if not isinstance(x, int):
+                raise TypeError(f"elements in {input_} must be of type (int), got {type(x)}")
+
+            if not x >= min_val:
+                raise ValueError(f"elements in {input_} must be >= {min_val}, got {x}")
+
+        return input_
+
+    @staticmethod
+    def _expand(input_, len_, fill):
+        new = [fill] * len_
+        i = len(input_)
+        new[-i:] = input_
+        return tuple(new)
+
+    @staticmethod
+    def _mode(xx, kk, padding, stride, mode):
+        modes = ('user', 'full', 'keep')
+        if mode not in modes:
+            raise ValueError(f"mode must be in {modes}, got {mode}")
+
+        if mode == 'user':
             # user mode: no change to default or input padding and stride values
-            if mode == 'user':
-                pass
+            pass
 
+        elif mode == 'full':
             # full mode: stride = 1, padding =  kernel size - 1
-            elif mode == 'full':
-                pad_height = kk.height - 1
-                pad_width = kk.width - 1
-                padding = (pad_height, pad_width)
+            padding = kk.height - 1, kk.width - 1
+            stride = 1, 1
 
-                stride_height = 1
-                stride_width = 1
-                stride = (stride_height, stride_width)
-
+        elif mode == 'keep':
             # keep mode: calculate minimum padding necessary using user or default stride values with image and kernel dimensions
             # note: the minimum padding may not be an even number, thus resulting in extra padding on the 'right' side
-            elif mode == 'keep':
-                min_pad = lambda x, k, s: (k - s + x * (s - 1)) / 2
-                pad_height = min_pad(xx.height, kk.height, stride_height)
-                pad_width = min_pad(xx.width, kk.width, stride_width)
-                padding = (pad_height, pad_width)
+            pmin = lambda x, k, s: (k - s + x * (s - 1)) / 2
+            padding = pmin(xx.height, kk.height, stride_height), pmin(xx.width, kk.width, stride_width)
 
         return padding, stride
 
     def correlate2d(self, images, kernels):
-        # standardize inputs to 4d
-        images = np.array(images, ndmin=4)
-        kernels = np.array(kernels, ndmin=4)
+        # validate inputs and expand to 4d if valid
+        images = self._make4d(images)
+        kernels = self._make4d(kernels)
 
-        # padding
+        # pad images
         images = self._pad2d(images)
+
+        # validate input shapes
+        if images.shape != self.xx.shape:
+            raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
+
+        if kernels.shape != self.kk.shape:
+            raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
 
         # create im2col matrices
         im2cols = self._im2col(images)
@@ -117,12 +149,19 @@ class Sweep2d():
         return outputs
 
     def convolve2d(self, images, kernels):
-        # standardize inputs to 4d
-        images = np.array(images, ndmin=4)
-        kernels = np.array(kernels, ndmin=4)
+        # validate inputs and expand to 4d if valid
+        images = self._make4d(images)
+        kernels = self._make4d(kernels)
 
-        # padding
+        # pad images
         images = self._pad2d(images)
+
+        # validate input shapes
+        if images.shape != self.xx.shape:
+            raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
+
+        if kernels.shape != self.kk.shape:
+            raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
 
         # create im2col matrices
         im2cols = self._im2col(images)
@@ -130,17 +169,25 @@ class Sweep2d():
         # create kr2row matrix
         kr2row = self._kr2row(kernels, 'convolve2d')
 
-        # corr via dot product
+        # conv via dot product
         yy = self.yy
         outputs = np.matmul(kr2row, im2cols).reshape(yy.shape)
         return outputs
 
     def median2d(self, images):
-        # standardize inputs to 4d
-        images = np.array(images, ndmin=4)
+        # validate inputs and expand to 4d if valid
+        images = self._make4d(images)
+        kernels = self._make4d(kernels)
 
-        # padding
+        # pad images
         images = self._pad2d(images)
+
+        # validate input shapes
+        if images.shape != self.xx.shape:
+            raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
+
+        if kernels.shape != self.kk.shape:
+            raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
 
         # create im2col matrices
         im2cols = self._im2col(images)
@@ -149,18 +196,26 @@ class Sweep2d():
         xx = self.xx
         yy = self.yy
         output_shape = (xx.num, 1, yy.height, yy.width)
-        yy = Dims(output_shape)
+        yy = Shape(output_shape)
 
         # Median Filter calculates the median of the 3d im2col matrix along axis 1 (down through each column / across rows). Reshape to proper output dimensions
         outputs = np.median(im2cols, axis=1).reshape(yy.shape)
         return outputs
 
     def mean2d(self, images):
-        # standardize inputs to 4d
-        images = np.array(images, ndmin=4)
+        # validate inputs and expand to 4d if valid
+        images = self._make4d(images)
+        kernels = self._make4d(kernels)
 
-        # padding
+        # pad images
         images = self._pad2d(images)
+
+        # validate input shapes
+        if images.shape != self.xx.shape:
+            raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
+
+        if kernels.shape != self.kk.shape:
+            raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
 
         # create im2col matrices
         im2cols = self._im2col(images)
@@ -169,25 +224,32 @@ class Sweep2d():
         xx = self.xx
         yy = self.yy
         output_shape = (xx.num, 1, yy.height, yy.width)
-        yy = Dims(output_shape)
+        yy = Shape(output_shape)
 
         # Median Filter calculates the median of the 3d im2col matrix along axis 1 (down through each column / across rows). Reshape to proper output dimensions
         outputs = np.mean(im2cols, axis=1).reshape(yy.shape)
         return outputs
 
+    @staticmethod
+    def _make4d(array):
+        if not isinstance(array, np.ndarray):
+            raise TypeError(f"input must be of type (np.ndarray), got {type(array)}")
+
+        if not array.ndim <= 4:
+            raise ValueError(f"input ndims must be <= 4, got {array.ndim}")
+
+        # if ndim = 4, skip this step for time savings
+        if array.ndim < 4:
+            array = array[(None,) * (4 - array.ndim)]
+
+        return array
+
     def _pad2d(self, images):
-        xx = self.xx
-        pp = self.pp
+        r1, r2 = self.rows
+        c1, c2 = self.cols
         padded = self.padded
 
-        # starting indices, left side bias
-        h1 = int(np.floor(pp.height))
-        w1 = int(np.floor(pp.width))
-
-        # ending indices
-        h2 = int(np.floor(xx.height - pp.height))
-        w2 = int(np.floor(xx.width - pp.width))
-        padded[:, :, h1: h2, w1: w2] = images
+        padded[:, :, r1: r2, c1: c2] = images
         return padded
 
     def _im2col(self, images):
@@ -203,3 +265,17 @@ class Sweep2d():
         elif operation == "correlate2d":
             kr2row = kernels.reshape(kk.num, -1)
         return kr2row
+
+
+if __name__ == "__main__":
+    images_shape = (1, 3, 100, 100)
+    kernels_shape = (1, 3, 3, 3)
+    padding = 0
+    stride = 1
+    mode = 'user'
+    sweeper = Sweep2d(images_shape, kernels_shape, padding, stride, mode)
+    print(sweeper.xx.shape)
+    print(sweeper.kk.shape)
+    print(sweeper.padding)
+    print(sweeper.stride)
+
