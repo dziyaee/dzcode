@@ -3,7 +3,7 @@ import os
 from PIL import Image
 import time
 import functools
-
+import logging
 
 # Numpy / Torch Stuff
 def info(x, var_name="var"):
@@ -184,7 +184,22 @@ def timer(func):
         value = func(*args, **kwargs)
         stop_time = time.perf_counter()
         run_time = stop_time - start_time
-        print(f"{func.__name__!r:15} Time: {(run_time * 1e3):.3f} ms")
+        print(f"{func.__name__!r} time: {(run_time * 1e3):.3f} ms")
         return value
     return wrapper
 
+
+def init_logger(filename, loggername, loggerlevel, format=None, dateformat=None):
+    logger = logging.getLogger(loggername)
+
+    level = loggerlevel.upper()
+    level = getattr(logging, level)
+    logger.setLevel(level)
+
+    file_handler = logging.FileHandler(filename)
+
+    formatter = logging.Formatter(fmt=format, datefmt=dateformat)
+    file_handler.setFormatter(formatter)
+
+    logger.addHandler(file_handler)
+    return logger
