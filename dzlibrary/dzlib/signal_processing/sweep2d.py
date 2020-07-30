@@ -117,8 +117,7 @@ class Sweep2d():
             # keep mode: calculate minimum padding necessary using user or default stride values with image and kernel dimensions
             # note: the minimum padding may not be an even number, thus resulting in extra padding on the 'right' side
             pmin = lambda x, k, s: (k - s + x * (s - 1)) / 2
-            stride_height, stride_width = stride
-            padding = pmin(xx.height, kk.height, stride_height), pmin(xx.width, kk.width, stride_width)
+            padding = pmin(xx.height, kk.height, stride[0]), pmin(xx.width, kk.width, stride[1])
 
         return padding, stride
 
