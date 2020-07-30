@@ -1,7 +1,6 @@
 import numpy as np
 from dzlib.signal_processing.utils import im2col
 from dzlib.common.data import Shape
-from dzlib.common.utils import timer
 
 
 class Sweep2d():
@@ -27,7 +26,7 @@ class Sweep2d():
             raise ValueError(f"Kernel and image depths must be equal, got {kk.depth}, {xx.depth}")
 
         # return padding and stride based on mode
-        padding, stride  = self._mode(xx, kk, padding, stride, mode)
+        padding, stride = self._mode(xx, kk, padding, stride, mode)
         padding_height, padding_width = padding
         stride_height, stride_width = stride
 
@@ -118,6 +117,7 @@ class Sweep2d():
             # keep mode: calculate minimum padding necessary using user or default stride values with image and kernel dimensions
             # note: the minimum padding may not be an even number, thus resulting in extra padding on the 'right' side
             pmin = lambda x, k, s: (k - s + x * (s - 1)) / 2
+            stride_height, stride_width = stride
             padding = pmin(xx.height, kk.height, stride_height), pmin(xx.width, kk.width, stride_width)
 
         return padding, stride
@@ -270,12 +270,15 @@ class Sweep2d():
 if __name__ == "__main__":
     images_shape = (1, 3, 100, 100)
     kernels_shape = (1, 3, 3, 3)
-    padding = 0
-    stride = 1
+    padding = 0, 0
+    stride = 1, 1
     mode = 'user'
     sweeper = Sweep2d(images_shape, kernels_shape, padding, stride, mode)
-    print(sweeper.xx.shape)
-    print(sweeper.kk.shape)
-    print(sweeper.padding)
-    print(sweeper.stride)
-
+    print(f"images shape:  {images_shape}")
+    print(f"kernels shape: {sweeper.kk.shape}")
+    print(f"padding:       {sweeper.padding}")
+    print(f"stride:        {sweeper.stride}")
+    print(f"padded shape:  {sweeper.xx.shape}")
+    print(f"output shape:  {sweeper.yy.shape}")
+    print(f"padding rows:  {sweeper.rows}")
+    print(f"padding cols:  {sweeper.cols}")
