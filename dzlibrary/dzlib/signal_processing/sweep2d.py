@@ -1,6 +1,7 @@
 import numpy as np
 from dzlib.signal_processing.utils import im2col
 from dzlib.common.data import Shape
+# from dzlib.common.utils import timer
 
 
 class Sweep2d():
@@ -12,10 +13,10 @@ class Sweep2d():
         stride = self._totuple(stride, 2, 1)
 
         # expand inputs to max lengths with fill values
-        images_shape = self._expand(images_shape, 4, 1)
-        kernels_shape = self._expand(kernels_shape, 4, 1)
-        padding = self._expand(padding, 2, padding[0])
-        stride = self._expand(stride, 2, stride[0])
+        images_shape = self._expandtuple(images_shape, 4, 1)
+        kernels_shape = self._expandtuple(kernels_shape, 4, 1)
+        padding = self._expandtuple(padding, 2, padding[0])
+        stride = self._expandtuple(stride, 2, stride[0])
 
         # create Shape objects from images_shape and kernels_shape
         xx = Shape(images_shape)
@@ -66,6 +67,8 @@ class Sweep2d():
 
     @staticmethod
     def _totuple(input_, max_len, min_val):
+        max_len = max(1, max_len)
+
         # convert input_ to tuple if valid
         if isinstance(input_, int):
             input_ = (input_,)
@@ -73,13 +76,14 @@ class Sweep2d():
         elif isinstance(input_, (list, tuple)):
             input_ = tuple(input_)
 
-            # validations
-            if len(input_) > 4 or len(input_) == 0:
-                raise ValueError(f"number of elements in {input_} must be between 1 and {max_len}, got {len(input_)}")
+        # validations
+        else:
+            raise TypeError(f"{input_} must be of types (int, list, tuple), got {type(input_)}")
+
 
         # more validations
-        else:
-            raise TypeError(f"{input_} must be of types (list, tuple), got {type(input_)}")
+        if len(input_) > max_len or len(input_) < 1:
+            raise ValueError(f"number of elements in {input_} must be between 1 and {max_len}, got {len(input_)}")
 
         # a few more validations
         for x in input_:
@@ -92,11 +96,14 @@ class Sweep2d():
         return input_
 
     @staticmethod
-    def _expand(input_, len_, fill):
-        new = [fill] * len_
-        i = len(input_)
-        new[-i:] = input_
-        return tuple(new)
+    def _expandtuple(x, size, fill):
+        if not isinstance(x, (tuple, list)):
+            raise TypeError(f"{x} must be of type tuple, got {type(x)}")
+
+        y = [fill] * size
+        i = min(len(x), size)
+        y[-i:] = x[-i:]
+        return tuple(y)
 
     @staticmethod
     def _mode(xx, kk, padding, stride, mode):
@@ -121,6 +128,7 @@ class Sweep2d():
 
         return padding, stride
 
+    # @timer
     def correlate2d(self, images, kernels):
         # validate inputs and expand to 4d if valid
         images = self._make4d(images)
@@ -230,6 +238,7 @@ class Sweep2d():
         return outputs
 
     @staticmethod
+    # @timer
     def _make4d(array):
         if not isinstance(array, np.ndarray):
             raise TypeError(f"input must be of type (np.ndarray), got {type(array)}")
@@ -243,6 +252,7 @@ class Sweep2d():
 
         return array
 
+    # @timer
     def _pad2d(self, images):
         r1, r2 = self.rows
         c1, c2 = self.cols
@@ -251,11 +261,13 @@ class Sweep2d():
         padded[:, :, r1: r2, c1: c2] = images
         return padded
 
+    # @timer
     def _im2col(self, images):
         indices = self.indices
         im2cols = np.array([np.take(image, indices) for image in images])
         return im2cols
 
+    # @timer
     def _kr2row(self, kernels, operation):
         kk = self.kk
         if operation == "convolve2d":
