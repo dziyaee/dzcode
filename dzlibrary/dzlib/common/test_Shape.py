@@ -14,7 +14,7 @@ class TestShape(unittest.TestCase):
         del self.withlist
         del self.inputs
 
-    # Test setting of shape attribute at Shape class instantiation
+    # Test setting of shape attribute at Shape class instantiationls
     def test_shape(self):
         # input must be tuple or list
         self.assertRaises(TypeError, Shape, None)
@@ -60,8 +60,8 @@ class TestShape(unittest.TestCase):
     # Test setting of .shape attribute after Shape class instantiation
     def test_shape_set(self):
         x, y = self.inputs
-        x.shape = (2, 3)
-        y.shape = [3, 4]
+        x.shape = (2, 3) # with tuple
+        y.shape = [3, 4] # with list
         self.assertEqual(x.shape, (2, 3))
         self.assertEqual(y.shape, (3, 4))
 
