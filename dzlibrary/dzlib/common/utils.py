@@ -178,13 +178,16 @@ def quantize(x, bin_min, bin_max, bin_spacing):
 
 
 def timer(func):
+    units = ('s', 'ms', 'us', 'ns')
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         start_time = time.perf_counter()
         value = func(*args, **kwargs)
         stop_time = time.perf_counter()
         run_time = stop_time - start_time
-        print(f"{func.__name__!r} time: {(run_time * 1e3):.3f} ms")
+        m = int(np.abs(np.log10(run_time) // 3))
+        run_time *= (1e3) ** m
+        print(f"{func.__name__!r} time: {(run_time):.1f} {units[m]}")
         return value
     return wrapper
 
