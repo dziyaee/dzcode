@@ -1,4 +1,5 @@
 import numpy as np
+import numbers
 from dzlib.signal_processing.utils import im2col
 
 
@@ -8,6 +9,7 @@ class SweepNd():
     dtype = np.float32
 
     def __init__(self, unpadded, window, padding, stride, mode, INPUT_NDIM, PARAM_NDIM, INPUT_SHAPE, PARAM_SHAPE):
+        # REPLACE INPUT_ / PARAM_ NDIM WITH LEN(INPUT_ / PARAM_ SHAPE)
 
         # inputs to tuples
         unpadded = self._totuple(unpadded)
@@ -33,14 +35,14 @@ class SweepNd():
         padding, stride = self._mode(unpadded, window, padding, stride, mode)
 
         # padded shape
-        padded = self._calc_padded(padded, unpadded, padding)
+        padded = self._padded_shape(padded, unpadded, padding)
 
         # padding indices & padded array
         padding_indices = self._padding_indices(padded, padding)
         padded_array = np.zeros((padded.shape)).astype(self.dtype)
 
         # output shape
-        output = self._calc_output(padded, window, stride, output)
+        output = self._output_shape(padded, window, stride, output)
 
         # im2col indices
         i = PARAM_NDIM + 1
@@ -78,10 +80,13 @@ class SweepNd():
     @staticmethod
     def _validate(x, length, min_value):
         if not len(x) == length:
-            raise ValueError(f"bad length: length of tuple {x} must = {length}, got {len(x)}")
+            raise ValueError(f"Length of {x} must = {length}, got {len(x)}")
 
-        if not all(i >= min_value and isinstance(i, int) for i in x):
-            raise ValueError(f"bad values: all elements in {x} must be integers >= {min_value}")
+        if not all(i >= min_value for i in x):
+            raise ValueError(f"All elements in {x} must be >= {min_value}")
+
+        if not all(isinstance(i, numbers.Integral) for i in x):
+            raise TypeError(f"All elements in {x} must be integers")
         return None
 
     def _mode(self, x, k, p, s, mode):
@@ -103,11 +108,11 @@ class SweepNd():
                 raise ValueError(f"Mode must be in {self.modes}, got {mode}")
 
     @staticmethod
-    def _calc_padded(x, p):
+    def _padded_shape(x, p):
         return int(x + 2 * p)
 
     @staticmethod
-    def _calc_output(x, k, s):
+    def _output_shape(x, k, s):
         return int(((x - k) // s) + 1)
 
     @staticmethod
@@ -125,6 +130,12 @@ class SweepNd():
             raise ValueError(f"Array shape must = {shape}, got {array.shape}")
         return array
 
+    def _pad(self, unpadded_array):
+        i = self.padding_indices
+        padded_array = self.padded_array  # faster to not copy
+        padded_array[i] = unpadded_array
+        return padded_array
+
     def _im2col(self, images):
         return np.array([np.take(image, self.im2col_indices) for image in images])
 
@@ -134,16 +145,108 @@ class SweepNd():
         SWEEP_AXES = self.SWEEP_AXES
 
         if operation == "correlate":
-            return kernels.reshape(window.num, -1).astype(dtype)
+            return kernels.reshape(window.num, -1).astype(self.dtype)
 
         elif operation == "convolve":
-            return np.flip(kernels, axis=SWEEP_AXES).reshape(window.num, -1).astype(dtype)
+            return np.flip(kernels, axis=SWEEP_AXES).reshape(window.num, -1).astype(self.dtype)
 
         else:
             raise ValueError(f"operation must be in {self.operations}, got {operation}")
+
+    def _correlate(self, images, kernels):
+        # images
+        images = self._expand(images, self.unpadded.shape)
+        images = self._pad(images)
+        im2cols = self._im2col(images)
+
+        # kernels
+        self.operation = "correlate"
+        kernels = self._expand(kernels, self.window.shape)
+        kr2row = self._kr2row(kernels)
+
+        # correlate via dot product
+        return np.matmul(kr2row, im2cols).reshape(self.output.shape).astype(self.dtype)
+
+    def _convolve(self, images, kernels):
+        # images
+        images = self._expand(images, self.unpadded.shape)
+        images = self._pad(images)
+        im2cols = self._im2col(images)
+
+        # kernels
+        self.operation = "convolve"
+        kernels = self._expand(kernels, self.window.shape)
+        kr2row = self._kr2row(kernels)
+
+        # convolve via dot product
+        return np.matmul(kr2row, im2cols).reshape(self.output.shape).astype(self.dtype)
 
     def __repr__(self):
         return f"{self.__class__.__name__}(unpadded = {self.unpadded.shape}, window = {self.window.shape}, padding = {self.padding.shape}, stride = {self.stride.shape}, mode = '{self.mode}')"
 
     def __str__(self):
         return f"{self.__class__.__name__}(unpadded = {self.unpadded}, window = {self.window}, padding = {self.padding}, stride = {self.stride}, mode = '{self.mode}')"
+
+
+if __name__ == "__main__":
+    pass
+
+
+
+# TO BE IMPLEMENTED
+
+    # def median2d(self, images):
+    #     # validate inputs and expand to 4d if valid
+    #     images = self._make4d(images)
+    #     kernels = self._make4d(kernels)
+
+    #     # pad images
+    #     images = self._pad2d(images)
+
+    #     # validate input shapes
+    #     if images.shape != self.xx.shape:
+    #         raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
+
+    #     if kernels.shape != self.kk.shape:
+    #         raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
+
+    #     # create im2col matrices
+    #     im2cols = self._im2col(images)
+
+    #     # update output shape depth to 1 (because number of kernels = 1 for median2d operation)
+    #     xx = self.xx
+    #     yy = self.yy
+    #     output_shape = (xx.num, 1, yy.height, yy.width)
+    #     yy = Shape(output_shape)
+
+    #     # Median Filter calculates the median of the 3d im2col matrix along axis 1 (down through each column / across rows). Reshape to proper output dimensions
+    #     outputs = np.median(im2cols, axis=1).reshape(yy.shape)
+    #     return outputs
+
+    # def mean2d(self, images):
+    #     # validate inputs and expand to 4d if valid
+    #     images = self._make4d(images)
+    #     kernels = self._make4d(kernels)
+
+    #     # pad images
+    #     images = self._pad2d(images)
+
+    #     # validate input shapes
+    #     if images.shape != self.xx.shape:
+    #         raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
+
+    #     if kernels.shape != self.kk.shape:
+    #         raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
+
+    #     # create im2col matrices
+    #     im2cols = self._im2col(images)
+
+    #     # update output shape depth to 1 (because number of kernels = 1 for mean2d operation)
+    #     xx = self.xx
+    #     yy = self.yy
+    #     output_shape = (xx.num, 1, yy.height, yy.width)
+    #     yy = Shape(output_shape)
+
+    #     # Median Filter calculates the median of the 3d im2col matrix along axis 1 (down through each column / across rows). Reshape to proper output dimensions
+    #     outputs = np.mean(im2cols, axis=1).reshape(yy.shape)
+    #     return outputs
