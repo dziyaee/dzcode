@@ -1,80 +1,107 @@
-from Sweep2d import Sweep2d
 import numpy as np
 import torch
 import torch.nn.functional as F
 import scipy.signal as sp
+from dzlib.signal_processing.sweep2d import Sweep2d
+import yaml
 
 
-x = (5, 3, 100, 100)
-k = (5, 3, 3, 3)
-p = (1, 1)
-s = (1, 1)
-m = 'user'
+def errors(func):
+    def wrapper(*args, **kwargs):
+        out1, out2 = func(*args, **kwargs)
+        diff = out1 - out2
+        error = np.abs(diff)
+        error = np.mean(error)
+        return error
+    return wrapper
 
-images_np = np.random.randn(*x).astype(np.float32)
-kernels_np = np.random.randn(*k).astype(np.float32)
 
-images_pt = torch.from_numpy(images_np).type(torch.FloatTensor)
-kernels_pt = torch.from_numpy(kernels_np).type(torch.FloatTensor)
+# @errors
+def eval_vs_torch(data, mode, seed=None):
+    # mode argument doesn't get used here at all
+    inputs_shape, kernels_shape, padding, stride = data
 
-sweep2d = Sweep2d(x, k, p, s, m)
-sweep_outputs_np = sweep2d.correlate(images_np, kernels_np)
+    # generate arrays
+    if seed:
+        np.random.seed(seed)
+    inputs_np = np.random.randn(*inputs_shape).astype(np.float32)
+    kernels_np = np.random.randn(*kernels_shape).astype(np.float32)
+    inputs_pt = torch.from_numpy(inputs_np).type(torch.FloatTensor)
+    kernels_pt = torch.from_numpy(kernels_np).type(torch.FloatTensor)
 
-torch_outputs_pt = F.conv2d(images_pt, kernels_pt, bias=None, stride=s, padding=p)
-torch_outputs_np = np.asarray(torch_outputs_pt).astype(np.float32)
+    # sweeper
+    sweep2d = Sweep2d(inputs_shape, kernels_shape, padding, stride, 'user')
+    sweep_outputs_np = sweep2d.correlate2d(inputs_np, kernels_np)
 
-errors = sweep_outputs_np - torch_outputs_np
-mean_error = np.mean(np.abs(errors))
-max_error = np.max(np.abs(errors))
+    # pytorch
+    torch_outputs_pt = F.conv2d(inputs_pt, kernels_pt, None, stride, padding)
+    torch_outputs_np = np.asarray(torch_outputs_pt)
 
-print("Sweeper Corr2d vs Pytorch Conv2d:")
-print(f"mean_error: {mean_error}")
-print(f"max_error:  {max_error}")
-print()
+    return sweep_outputs_np, torch_outputs_np
 
-x = (1, 1, 100, 100)
-k = (1, 1, 3, 3)
-p = (0, 0)
-s = (1, 1)
-m = 'full'
 
-images_np = np.random.randn(*x).astype(np.float32)
-kernels_np = np.random.randn(*k).astype(np.float32)
+# @errors
+def eval_vs_scipy(data, mode, seed=None):
+    inputs_shape, kernels_shape, padding, stride = data
 
-sweep2d = Sweep2d(x, k, p, s, m)
-sweep_outputs_np = sweep2d.correlate(images_np, kernels_np)[0, 0, :, :]
+    # generate arrays
+    if seed:
+        np.random.seed(seed)
+    inputs_np = np.random.randn(*inputs_shape).astype(np.float32)
+    kernels_np = np.random.randn(*kernels_shape).astype(np.float32)
 
-scipy_outputs_np = sp.correlate2d(images_np[0, 0, :, :], kernels_np[0, 0, :, :], mode='full')
-errors = sweep_outputs_np - scipy_outputs_np
-mean_error = np.mean(np.abs(errors))
-max_error = np.max(np.abs(errors))
+    # sweeper
+    sweep2d = Sweep2d(inputs_shape, kernels_shape, padding, stride, mode)
+    sweep_outputs_np = sweep2d.convolve2d(inputs_np, kernels_np)
 
-print("Sweeper Corr2d vs Scipy Corr2d:")
-print(f"mean_error: {mean_error}")
-print(f"max_error:  {max_error}")
-print()
+    # scipy
+    scipy_outputs_np = sp.convolve2d(inputs_np[0, 0, :, :], kernels_np[0, 0, :, :], mode)
 
-x = (1, 1, 100, 100)
-k = (1, 1, 3, 3)
-p = (0, 0)
-s = (1, 1)
+    return sweep_outputs_np[0, 0, :, :], scipy_outputs_np
 
-images_np = np.random.randn(*x).astype(np.float32)
-kernels_np = np.random.randn(*k).astype(np.float32)
 
-images_pt = torch.from_numpy(images_np).type(torch.FloatTensor)
-kernels_pt = torch.from_numpy(kernels_np).type(torch.FloatTensor)
+def generate_common(settings):
+    # generate limits of each input argument
+    unpadded, window, padding, stride = settings['Sweep2d']['input_arg_limits'].values()
+    xlims = tuple((min, max+1) for min, max in unpadded.values())
+    klims = tuple((min, max+1) for min, max in window.values())
+    plims = tuple((min, max+1) for min, max in padding.values())
+    slims = tuple((min, max+1) for min, max in stride.values())
 
-scipy_outputs_np = sp.correlate2d(images_np[0, 0, :, :], kernels_np[0, 0, :, :], mode='valid')
+    # generate dimensions from limits
+    n = settings['Sweep2d']['n_tests']
+    xdims = list(list(np.random.randint(min, max, n, dtype=np.int32)) for min, max in xlims)
+    kdims = list(list(np.random.randint(min, max, n, dtype=np.int32)) for min, max in klims)
+    pdims = list(list(np.random.randint(min, max, n, dtype=np.int32)) for min, max in plims)
+    sdims = list(list(np.random.randint(min, max, n, dtype=np.int32)) for min, max in slims)
 
-torch_outputs_pt = F.conv2d(images_pt, kernels_pt, bias=None, stride=s, padding=p)
-torch_outputs_np = np.asarray(torch_outputs_pt).astype(np.float32)
+    return xdims, kdims, pdims, sdims, n
 
-errors = scipy_outputs_np - torch_outputs_np
-mean_error = np.mean(np.abs(errors))
-max_error = np.max(np.abs(errors))
 
-print("Scipy Corr2d vs Pytorch Conv2d:")
-print(f"mean_error: {mean_error}")
-print(f"max_error:  {max_error}")
-print()
+def generate_vs_torch(settings):
+    xdims, kdims, pdims, sdims, n = generate_common(settings)
+
+    # vs torch args shapes
+    kdims[1] = xdims[1]  # overwrite: set kernel depth equal to unpadded depth
+    xshapes = [dims for dims in zip(*xdims)]
+    kshapes = [dims for dims in zip(*kdims)]
+    pshapes = [dims for dims in zip(*pdims)]
+    sshapes = [dims for dims in zip(*sdims)]
+
+    return zip(xshapes, kshapes, pshapes, sshapes)
+
+
+def generate_vs_scipy(settings):
+    xdims, kdims, pdims, sdims, n = generate_common(settings)
+
+    # vs scipy args shapes
+    xdims[0] = kdims[0] = (1,) * n  # overwrite: set unpadded kernel and unpadded nums to 1
+    xdims[1] = kdims[1] = (1,) * n  # overwrite: set unpadded kernel and unpadded depths to 1
+    pdims[0] = pdims[1] = (0,) * n  # overwrite: padding is 0, but doesn't actually matter what gets passed here
+    sdims[0] = sdims[1] = (1,) * n  # overwrite: stride is 1, but doesn't actually matter what gets passed here
+    xshapes = [dims for dims in zip(*xdims)]
+    kshapes = [dims for dims in zip(*kdims)]
+    pshapes = [dims for dims in zip(*pdims)]
+    sshapes = [dims for dims in zip(*sdims)]
+
+    return zip(xshapes, kshapes, pshapes, sshapes)
