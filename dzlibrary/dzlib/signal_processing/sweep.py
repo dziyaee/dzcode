@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import numbers
 from dzlib.signal_processing.utils import im2col
@@ -5,7 +6,7 @@ from dzlib.signal_processing.utils import im2col
 
 class SweepNd():
     operations = ("correlate", "convolve")
-    modes = ("user", "full", "keep")
+    modes = ("user", "full", "same")
     dtype = np.float32
 
     def __init__(self, unpadded, window, padding, stride, mode, INPUT_NDIM, PARAM_NDIM, INPUT_SHAPE, PARAM_SHAPE):
@@ -94,12 +95,14 @@ class SweepNd():
             return p, s
 
         elif mode == "full":
-            p = k - 1
             s = 1
+            p = k - 1
             return p, s
 
-        elif mode == 'keep':
+        elif mode == 'same':
+            s = 1
             p = (k - s + x * (s - 1)) / 2  # do not int() this; multiples of 0.5 are allowed
+            return p, s
 
         else:
             if mode in self.modes:
@@ -117,8 +120,8 @@ class SweepNd():
 
     @staticmethod
     def _padding_indices(x, p):
-        i1 = int(p // 1)
-        i2 = int((x - p) // 1)
+        i1 = int(math.ceil(p))
+        i2 = int(math.ceil(x - p))
         return slice(i1, i2)
 
     def _expand(self, array, shape):

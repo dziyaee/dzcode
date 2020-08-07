@@ -23,7 +23,7 @@ class Param2d(ShapeNd):
 
 class Sweep2d(SweepNd):
     operations = ("correlate", "convolve")
-    modes = ("user", "full", "keep")
+    modes = ("user", "full", "same")
     dtype = np.float32
 
     def __init__(self, unpadded, window, padding, stride, mode="user"):
