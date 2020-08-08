@@ -4,6 +4,9 @@ from PIL import Image
 import time
 import functools
 import logging
+import gc
+import itertools
+
 
 # Numpy / Torch Stuff
 def info(x, var_name="var"):
@@ -177,21 +180,6 @@ def quantize(x, bin_min, bin_max, bin_spacing):
     return i
 
 
-def timer(func):
-    units = ('s', 'ms', 'us', 'ns')
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        start_time = time.perf_counter()
-        value = func(*args, **kwargs)
-        stop_time = time.perf_counter()
-        run_time = stop_time - start_time
-        m = int(np.abs(np.log10(run_time) // 3))
-        run_time *= (1e3) ** m
-        print(f"{func.__name__!r} time: {(run_time):.1f} {units[m]}")
-        return value
-    return wrapper
-
-
 def init_logger(filename, loggername, loggerlevel, format=None, dateformat=None):
     logger = logging.getLogger(loggername)
 
@@ -206,3 +194,35 @@ def init_logger(filename, loggername, loggerlevel, format=None, dateformat=None)
 
     logger.addHandler(file_handler)
     return logger
+
+
+def timer(func):
+    '''Decorator to time functions. Adds the .timer attribute to a function which can be called with additional arguments for timing purposes.
+    If the function is called without .timer, the original function will be called instead.'''
+    def inner(number, *args, **kwargs):
+        def wrap(*args, **kwargs):
+            start = time.perf_counter()
+
+            for i in range(number):
+                func(*args, **kwargs)
+
+            stop = time.perf_counter()
+            return stop - start
+        # The garbage collection code below was derived from an observation on Stack Overflow and the timeit source code
+        # https://github.com/python/cpython/blob/master/Lib/timeit.py
+        # https://stackoverflow.com/a/6612709/3826634
+        gcold = gc.isenabled()
+        gc.disable()
+
+        try:
+            times = wrap(*args, **kwargs)
+
+        finally:
+
+            if gcold:
+                gc.enable()
+
+        return times
+
+    func.timer = inner
+    return func
