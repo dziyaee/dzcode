@@ -46,7 +46,7 @@ def timing(n, datas):
 if __name__ == "__main__":
     import yaml
     import argparse
-    from sweep2d_time import load_shapes, generate_data
+    from sweep2d_time import get_shapes, generate_data
 
     parser = argparse.ArgumentParser()
     parser.add_argument("-f", "--filepath", help="yaml settings file path", type=str)
@@ -61,7 +61,7 @@ if __name__ == "__main__":
     with open(settings_path) as f:
         settings = yaml.load(f, Loader=yaml.FullLoader)
 
-    numbers, shapes = load_shapes(settings)
+    numbers, shapes = get_shapes(settings)
     np_datas, pt_datas = generate_data(shapes)
 
     n = len(numbers)
