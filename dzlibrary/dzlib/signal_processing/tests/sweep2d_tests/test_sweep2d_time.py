@@ -28,9 +28,6 @@ def timing(n, datas):
         time2 = torch2d.timer(number, images_pt, kernels_pt, padding, stride)
         stop = time.perf_counter()
 
-        # time1 = time1 / number
-        # time2 = time2 / number
-
         print()
         print(f"Test {i+1}/{n} finished in: {(stop - start):.0f} s")
         print(f"iters = {number}, unpadded = {unpadded}, window = {window}, padding = {padding}, stride = {stride}")
