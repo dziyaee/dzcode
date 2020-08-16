@@ -1,17 +1,18 @@
 import pytest
 from dzlib.signal_processing.sweep2d import Sweep2d
 import numbers
+from dzlib.signal_processing.tests.sweep2d_tests.sweep2d_unit import generate_shape_test_params
+import yaml
 
 
-# Test Inputs
-unpaddeds = [(1, 1, 10, 10), (1, 3, 10, 10)]
-windows = [(1, 1, 5, 5), (1, 3, 5, 5)]
-paddings = [(0, 0), (0, 0)]
-strides = [(1, 1), (1, 1)]
-# modes = ['user', 'user']
+# # Test Inputs
+settings_path = 'settings.yml'
 
-params = [inputs for inputs in zip(unpaddeds, windows, paddings, strides)]
-modes = ["user", "full", "same"]
+with open(settings_path) as file:
+    settings = yaml.load(file, Loader=yaml.FullLoader)
+
+inputs, modes = generate_shape_test_params(settings)
+
 
 # Test Fixtures
 @pytest.fixture(scope="function", params=modes)
@@ -20,11 +21,11 @@ def mode(request):
     return request.param
 
 
-@pytest.fixture(scope="function", params=params)
+@pytest.fixture(scope="function", params=inputs)
 def sweeper(request, mode):
     '''Fixture to iterate through each set of inputs, including modes from mode fixture'''
-    inputs = request.param
-    return Sweep2d(*inputs, mode)
+    args = request.param
+    return Sweep2d(*args, mode)
 
 
 # Test Classes
