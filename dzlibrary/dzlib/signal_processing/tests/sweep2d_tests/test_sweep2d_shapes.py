@@ -1,27 +1,27 @@
-import pytest
-from dzlib.signal_processing.sweep2d import Sweep2d
 import numbers
-from dzlib.signal_processing.tests.sweep2d_tests.sweep2d_unit import generate_shape_test_params
+import pytest
 import yaml
+from dzlib.signal_processing.sweep2d import Sweep2d
+from dzlib.signal_processing.tests.sweep2d_tests.sweep2d_unit import generate_shape_test_params
 
 
 # # Test Inputs
 settings_path = 'settings.yml'
-
 with open(settings_path) as file:
     settings = yaml.load(file, Loader=yaml.FullLoader)
-
 inputs, modes = generate_shape_test_params(settings)
 
-
 # Test Fixtures
-@pytest.fixture(scope="function", params=modes)
+scope = "module"  # scope must be shared by both fixtures as sweeper is dependent on mode
+
+
+@pytest.fixture(scope=scope, params=modes)
 def mode(request):
     '''Fixture to iterate through each mode'''
     return request.param
 
 
-@pytest.fixture(scope="function", params=inputs)
+@pytest.fixture(scope=scope, params=inputs)
 def sweeper(request, mode):
     '''Fixture to iterate through each set of inputs, including modes from mode fixture'''
     args = request.param
@@ -30,14 +30,10 @@ def sweeper(request, mode):
 
 # Test Classes
 class Test_Shape_Lengths:
-    """Test Shape Lengths"""
-
-    # ShapeNd objects
-    def test_unpadded_length(self, sweeper):
-        assert len(sweeper.unpadded.shape) == 4
-
-    def test_window_length(self, sweeper):
-        assert len(sweeper.window.shape) == 4
+    """
+    Length = 2: Padding, Stride, im2col indices array
+    Length = 4: Unpadded, Window, Output, Padded, Padded Array
+    """
 
     def test_padding_length(self, sweeper):
         assert len(sweeper.padding.shape) == 2
@@ -45,24 +41,30 @@ class Test_Shape_Lengths:
     def test_stride_length(self, sweeper):
         assert len(sweeper.stride.shape) == 2
 
+    def test_im2col_indices_length(self, sweeper):
+        assert len(sweeper.im2col_indices.shape) == 2
+
+    def test_unpadded_length(self, sweeper):
+        assert len(sweeper.unpadded.shape) == 4
+
+    def test_window_length(self, sweeper):
+        assert len(sweeper.window.shape) == 4
+
     def test_output_length(self, sweeper):
         assert len(sweeper.output.shape) == 4
 
     def test_padded_length(self, sweeper):
         assert len(sweeper.padded.shape) == 4
 
-    # numpy.ndarray objects
     def test_padded_array_length(self, sweeper):
         assert len(sweeper.padded_array.shape) == 4
 
-    def test_im2col_indices_length(self, sweeper):
-        assert len(sweeper.im2col_indices.shape) == 2
-
 
 class Test_Shape_Types:
-    """Test Shape Types"""
+    '''
+    Shape is instance of tuple: unpadded, window, padding, stride, output, padded
+    '''
 
-    # ShapeNd objects
     def test_unpadded_type(self, sweeper):
         assert isinstance(sweeper.unpadded.shape, tuple)
 
@@ -83,9 +85,11 @@ class Test_Shape_Types:
 
 
 class Test_Shape_Dim_Types:
-    """Test Shape Dimension Types"""
+    """
+    Element is instance of numbers.Integral: unpadded, window, padding (if mode is "user" or "full"), stride
+    Element is instance of numbers.Real: padding (if mode is "same")
+    """
 
-    # ShapeNd objects
     def test_unpadded_dim_type(self, sweeper):
         for dim in sweeper.unpadded.shape:
             assert isinstance(dim, numbers.Integral)
@@ -109,9 +113,12 @@ class Test_Shape_Dim_Types:
 
 
 class Test_Shape_Dim_Min_Values:
-    """Test Shape Dimension Min Values"""
+    '''
+    Element >= 1: unpadded, window, stride (if mode is "user")
+    Element = 1: stride (if mode is "full" or "same")
+    Element >= 0: padding
+    '''
 
-    # ShapeNd objects
     def test_unpadded_dim_min_value(self, sweeper):
         for dim in sweeper.unpadded.shape:
             assert dim >= 1
@@ -132,4 +139,3 @@ class Test_Shape_Dim_Min_Values:
         else:
             for dim in sweeper.stride.shape:
                 assert dim == 1
-
