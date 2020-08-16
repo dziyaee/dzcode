@@ -185,7 +185,7 @@ class SweepNd():
         return np.matmul(kr2row, im2cols).reshape(self.output.shape).astype(self.dtype)
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(unpadded = {self.unpadded.shape}, window = {self.window.shape}, padding = {self.padding.shape}, stride = {self.stride.shape}, mode = '{self.mode}')"
+        return f"{self.__class__.__name__}(unpadded = {self.unpadded.shape}, window = {self.window.shape}, padding = {self.padding.shape}, stride = {self.stride.shape}, mode = '{self.mode}', id = {hex(id(self))})"
 
     def __str__(self):
         return f"{self.__class__.__name__}(unpadded = {self.unpadded}, window = {self.window}, padding = {self.padding}, stride = {self.stride}, mode = '{self.mode}')"
