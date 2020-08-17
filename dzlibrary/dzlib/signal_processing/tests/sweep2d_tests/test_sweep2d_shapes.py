@@ -1,9 +1,11 @@
 import numbers
-import pytest
 import yaml
+import pytest
 from dzlib.signal_processing.sweep2d import Sweep2d
-from dzlib.signal_processing.tests.sweep2d_tests.sweep2d_unit import generate_shape_test_params
+from dzlib.signal_processing.tests.sweep2d_tests.utils import generate_shape_test_params
 
+
+# All of the tests in this module are for data computed during Sweep2d class instatiation / initialization.
 
 # # Test Inputs
 settings_path = 'settings.yml'
