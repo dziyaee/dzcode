@@ -1,8 +1,12 @@
-import pytest
+import math
+import numpy as np
 import yaml
+import pytest
 from dzlib.signal_processing.sweep2d import Sweep2d
 from dzlib.signal_processing.tests.sweep2d_tests.utils import generate_shape_test_params
 
+
+# All of the tests in this module are for data computed during Sweep2d class instatiation / initialization.
 
 # Test Inputs
 settings_path = 'settings.yml'
@@ -14,15 +18,17 @@ shapes_list, mode_list = generate_shape_test_params(settings)
 scope = "module"
 
 
-# First two fixtures generate the "actual" inputs
+# "actual" input fixtures. All fixtures below derive from these two
 @pytest.fixture(scope=scope, params=mode_list)
 def mode(request):
+    '''Returns a Sweep2d input mode argument'''
     mode = request.param
     return mode
 
 
 @pytest.fixture(scope=scope, params=shapes_list)
 def shapes(request):
+    '''Returns a set of Sweep2d input shape arguments (unpadded, window, padding, stride)'''
     shapes = request.param
     return shapes
 
@@ -30,20 +36,22 @@ def shapes(request):
 # This fixture generates the results based directly on the "actual" inputs
 @pytest.fixture(scope=scope)
 def sweeper(shapes, mode):
+    '''Returns a Sweep2d object to be tested'''
     sweeper = Sweep2d(*shapes, mode)
     return sweeper
 
 
-# this fixture generates the "expected" results based directly on the "actual" inputs but completely independent of the sweeper fixture or Sweep2d class being tested
+# All of the fixtures below compute and/or return "expected" data which are calculated from the "actual" inputs, but are completely independent of the object being tested, which is returned from the "sweeper" fixture.
 @pytest.fixture(scope=scope)
 def expected(shapes, mode):
+    '''Returns a tuple of all expected shapes. All other fixtures below derive their data from this one'''
     unpadded, window, padding, stride = shapes
 
     # Unpadded & Window (Unchanged)
     unpadded_num, unpadded_depth, unpadded_height, unpadded_width = unpadded
     window_num, window_depth, window_height, window_width = window
 
-    # Padding & Stride (Change based on mode)
+    # Padding & Stride (Can change based on mode)
     if mode == "user":
         stride_height, stride_width = stride
         padding_height, padding_width = padding
@@ -53,10 +61,13 @@ def expected(shapes, mode):
         padding_height = window_height - stride_height
         padding_width = window_width - stride_width
 
-    else:  # equivalent to elif mode == "same":
+    elif mode == "same":
         stride_height, stride_width = 1, 1
         padding_height = (window_height - stride_height) / 2
         padding_width = (window_width - stride_width) / 2
+
+    else:
+        raise ValueError(f"Expected mode in {mode_list}, got {mode}")
 
     padding = (padding_height, padding_width)
     stride = (stride_height, stride_width)
@@ -67,8 +78,8 @@ def expected(shapes, mode):
     padded = (unpadded_num, unpadded_depth, padded_height, padded_width)
 
     # Output (Calculated from Padded, Window, & Stride)
-    output_height = ((padded_height - window_height) // stride_height) + 1
-    output_width = ((padded_width - window_width) // stride_width) + 1
+    output_height = int(((padded_height - window_height) // stride_height) + 1)
+    output_width = int(((padded_width - window_width) // stride_width) + 1)
     output = (unpadded_num, window_num, output_height, output_width)
 
     # im2col (Calculated from Window & Output)
@@ -78,53 +89,76 @@ def expected(shapes, mode):
     return (unpadded, window, padding, stride, padded, output, im2col_indices)
 
 
-# Remaining fixtures just return each expected output independently if needed
 @pytest.fixture(scope=scope)
 def unpadded(expected):
+    '''Returns the unpadded shape'''
     unpadded, *_ = expected
     return unpadded
 
 
 @pytest.fixture(scope=scope)
 def window(expected):
+    '''Returns the window shape'''
     _, window, *_ = expected
     return window
 
 
 @pytest.fixture(scope=scope)
 def padding(expected):
+    '''Returns the padding shape'''
     _, _, padding, *_ = expected
     return padding
 
 
 @pytest.fixture(scope=scope)
 def stride(expected):
+    '''Returns the stride shape'''
     _, _, _, stride, _, _, _ = expected
     return stride
 
 
 @pytest.fixture(scope=scope)
 def padded(expected):
+    '''Returns the padded shape'''
     *_, padded, _, _ = expected
     return padded
 
 
 @pytest.fixture(scope=scope)
 def output(expected):
+    '''Returns the output shape'''
     *_, output, _ = expected
     return output
 
 
 @pytest.fixture(scope=scope)
 def im2col_indices(expected):
+    '''Returns the im2col_indices shape'''
     *_, im2col_indices = expected
     return im2col_indices
 
 
+@pytest.fixture(scope=scope)
+def padding_indices(padded, padding):
+    '''Computes and returns the expected padding indices'''
+    _, _, padded_height, padded_width = padded
+    padding_height, padding_width = padding
+
+    i1 = int(math.ceil(padding_height))
+    i2 = int(math.ceil(padded_height - padding_height))
+    rows = slice(i1, i2)
+
+    i1 = int(math.ceil(padding_width))
+    i2 = int(math.ceil(padded_width - padding_width))
+    cols = slice(i1, i2)
+
+    return np.s_[..., rows, cols]
+
+
 # Tests
-class Test_Shape_Values:
-    ''' Because all of the "expected" results logic happens in the expected fixture, these tests are very simple. They simply compare the "actual" results from the Sweep2d class instance returned by the sweeper fixture to the "expected" results returned directly or indirectly by the expected fixture
-    '''
+class Test_ShapeNd_Values:
+    '''Tests all object instances of ShapeNd for correct .shape values'''
+
     def test_unpadded(self, sweeper, unpadded):
         assert sweeper.unpadded.shape == unpadded
 
@@ -140,11 +174,20 @@ class Test_Shape_Values:
     def test_padded(self, sweeper, padded):
         assert sweeper.padded.shape == padded
 
-    def test_padded_array(self, sweeper, padded):
-        assert sweeper.padded_array.shape == padded
-
     def test_output(self, sweeper, output):
         assert sweeper.output.shape == output
 
+
+class Test_Numpy_NdArray_Shape_Values:
+    '''Tests all objects instnaces of numpy.ndarray for correct .shape values'''
+
+    def test_padded_array(self, sweeper, padded):
+        assert sweeper.padded_array.shape == padded
+
     def test_im2col_indices(self, sweeper, im2col_indices):
         assert sweeper.im2col_indices.shape == im2col_indices
+
+
+def test_padding_indices(sweeper, padding_indices):
+    '''Tests the padding indices, a numpy.s_ object for correct values'''
+    assert sweeper.padding_indices == padding_indices
