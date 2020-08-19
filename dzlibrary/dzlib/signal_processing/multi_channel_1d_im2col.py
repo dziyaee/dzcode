@@ -50,16 +50,16 @@ if __name__ == "__main__":
     input_shape = (16, 1024)
     vectors = np.random.randn(*input_shape)  # (C x N)
 
-    # sizes
-    vector_size = vectors.shape[-1]
-    stride = 1
-
     # windowing technique commonly used in Radar CFAR detection: https://www.mathworks.com/help/phased/examples/constant-false-alarm-rate-cfar-detection.html
     # kernel size: |REF|REF|GUARD|CUT|GUARD|REF|REF| --> |REF|REF|REF|REF|
     guard = 1  # Guard cells (discarded)
     ref = 2  # Reference cells (R) (kept)
     CUT = 1  # Cell Under Test (CUT) (discarded)
+
+    # sizes
     kernel = 2 * (guard + ref) + CUT
+    vector_size = vectors.shape[-1]
+    stride = 1
 
     # im2col indices
     indices = im2col_indices(vector_size, kernel, stride)  # (K x S)
