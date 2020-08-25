@@ -10,8 +10,8 @@ import pdb
 # gradient_intensities: (H x W) (magnitudes >= 0)
 # gradient_directions: (H x W) (-pi <= angles <= pi)
 np.random.seed(43)
-# shape = (1000, 800)
-shape = (5, 4)
+shape = (1000, 800)
+# shape = (5, 4)
 gradient_intensities = np.random.randint(0, 10, shape)
 # gradient_intensities = np.random.randn(*shape)
 gradient_directions = np.random.uniform(-np.pi, np.pi, shape)
@@ -178,7 +178,7 @@ def func4(gradient_intensities, gradient_directions, bins, pixel_map):
     # multiply by 45 gives which base line the angle is being measured from (0 or 45)
     # angle modulo 45 splits the space into 4 quarters (quarters 1, 2, 3, 4)
     # subtract that angle from the base line angle to obtain the angle theta
-    thetas = (angles % np.pi/2 // np.pi/4) * np.pi/4 - (angles % np.pi/4)
+    thetas = abs((angles % np.pi/2 // np.pi/4) * np.pi/4 - (angles % np.pi/4))
     interpolant_positions = np.tan(thetas)  # tan(theta) = interpolant_position / adjacent, where adjacent is always 1
 
     # relative_rows = row_map[bin_indices]
@@ -189,34 +189,59 @@ def func4(gradient_intensities, gradient_directions, bins, pixel_map):
     actual_rows = rows[:, None] + relative_rows
     actual_cols = cols[:, None] + relative_cols
 
-    actual_mags = gradient_intensities[actual_rows, actual_cols]
+    neighbour_mags1, neighbour_mags2 = gradient_intensities[actual_rows, actual_cols]
 
-    print(gradient_intensities)
-    print(rows)
-    print(cols)
-    print(magnitudes)
-    print()
-    print(np.round(gradient_directions * (180 / np.pi), 1))
-    print(np.round(angles * (180 / np.pi), 1))
-    print(bin_indices)
-    print(binned_angles * (180 / np.pi))
-    print()
-    print(rows)
-    print(relative_rows)
-    print(f"actual rows:\n{actual_rows}")
-    print()
-    print(cols)
-    print(relative_cols)
-    print(f"actual cols:\n{actual_cols}")
-    print()
-    print(f"actual_mags:\n{actual_mags}")
+    interpolant_positions = np.array([interpolant_positions, 1 - interpolant_positions]).T
+
+    interpolants1 = np.sum(neighbour_mags1 * interpolant_positions, axis=1)
+    interpolants2 = np.sum(neighbour_mags2 * interpolant_positions, axis=1)
+
+    # for r, c, mag, interpolant1, interpolant2 in zip(rows, cols, magnitudes, interpolants1, interpolants2):
+    #     if (mag <= interpolant1 or mag <= interpolant2):
+    #         gradient_intensities[r, c] = 0
+    #     pass
+
+    vals = np.array([magnitudes, interpolants1, interpolants2]).T
+    for r, c, val in zip(rows, cols, vals):
+        if (val[0] <= val[1] or val[0] <= val[2]):
+            gradient_intensities[r, c] = 0
+        pass
+
+
+    # print(i)
+    # print(gradient_intensities)
+    # print(rows)
+    # print(cols)
+    # print(magnitudes)
+    # print()
+    # print(np.round(gradient_directions * (180 / np.pi), 1))
+    # print(np.round(angles * (180 / np.pi), 1))
+    # print(bin_indices)
+    # print(binned_angles * (180 / np.pi))
+    # print()
+    # print(rows)
+    # print(relative_rows)
+    # print(f"actual rows:\n{actual_rows}")
+    # print()
+    # print(cols)
+    # print(relative_cols)
+    # print(f"actual cols:\n{actual_cols}")
+    # print()
+    # print(f"interpolant_positions:\n{interpolant_positions}")
+    # print(f"neighbour_mags1:\n{neighbour_mags1}")
+    # print(f"neighbour_mags2:\n{neighbour_mags2}")
+    # print(f"magnitudes:    {magnitudes}")
+    # print(f"interpolants1: {interpolants1}")
+    # print(f"interpolants2: {interpolants2}")
     return None
 
 
 
-N = 1
-time = func4.timer(N, gradient_intensities.copy(), gradient_directions.copy(), bins, pixel_map)
-print(f"time: {(time / N * 1e3):.4f} ms")
+copy = lambda x: x.copy()
+N = 10
+time = func4.timer(N, copy(gradient_intensities), gradient_directions.copy(), bins, pixel_map)
+print(f"time tot: {(time):10.1f} [s]")
+print(f"time per: {(time / N * 1e3):10.4f} [ms]")
 
 # g1 = func1(gradient_intensities.copy(), gradient_directions.copy(), bins, pixel_map)
 # g2 = func2(gradient_intensities.copy(), gradient_directions.copy(), bins, pixel_map)
