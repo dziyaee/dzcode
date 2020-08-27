@@ -2,45 +2,55 @@ import numpy as np
 
 
 def non_maximal_suppression(gradient_magnitudes, gradient_angles):
-    gradient_magnitudes = gradient_magnitudes.copy()
 
-    row_map = np.array([0, -1, -1, -1, 0])
-    col_map = np.array([1, 1, 0, -1, 1])
-    row_map = np.array([row_map, -row_map])
+    # copy arrays as changes will be made in-place during NMS iteration
+    gradient_magnitudes = gradient_magnitudes.copy()  # (H x W)
+    gradient_angles = gradient_angles.copy()
+
+    # relative row/col indices to center pixel of 3x3 kernel in binned gradient direction
+    row_map = np.array([0, 1, 1, 1, 0, -1, -1, -1, 0])  # (9,)
+    col_map = np.array([1, 1, 0, -1, -1, -1, 0, 1, 1])
+    row_map = np.array([row_map, -row_map])  # (2 x 9)
     col_map = np.array([col_map, -col_map])
 
-    rows, cols = np.where(gradient_magnitudes[1:-1, 1:-1] != 0)
-    rows += 1
+    # indices to all non-edge non-zero points for which to perform NMS on
+    rows, cols = np.where(gradient_magnitudes[1:-1, 1:-1] != 0)  # 2 x (N,)
+    rows += 1  # return indices within frame of reference of whole image (including edges)
     cols += 1
 
-    angles = gradient_angles[rows, cols]
-    angles[angles < 0] += np.pi
-    bins = np.arange(0, np.pi+np.pi/4, np.pi/4)
-    bin_indices = np.digitize(angles, bins[1:], right=False)
+    #  get indices of each binned angle for use in row/col index map
+    angles = gradient_angles[rows, cols]  # (N,)
+    angles *= (180 / np.pi)
+    angles += 180
+    bins = np.arange(0-22.5, 360-22.5+45, 45)  # (9,)
+    binned_indices = np.digitize(angles, bins[1:], right=False)  # (N,)
 
-    relative_rows = row_map[:, bin_indices]
-    relative_cols = col_map[:, bin_indices]
+    relative_rows = row_map[:, binned_indices]  # (2 x N)
+    relative_cols = col_map[:, binned_indices]
 
-    actual_rows = (rows + relative_rows).T
+    actual_rows = (rows + relative_rows).T  # (N x 2)
     actual_cols = (cols + relative_cols).T
 
-    magnitudes = gradient_magnitudes[rows, cols]
+    magnitudes = gradient_magnitudes[rows, cols]  # (N,)
 
     for r, c, mag, rows_, cols_ in zip(rows, cols, magnitudes, actual_rows, actual_cols):
         neighbour1 = gradient_magnitudes[rows_[0], cols_[0]]
         neighbour2 = gradient_magnitudes[rows_[1], cols_[1]]
-        if (mag <= neighbour1 or mag < neighbour2):
+        if (mag <= neighbour1 or mag <= neighbour2):
             gradient_magnitudes[r, c] = 0
 
     return gradient_magnitudes
 
 
+
 def non_maximal_suppression_with_interpolation(gradient_magnitudes, gradient_angles):
+    # copy arrays as changes will be made in-place during NMS iteration
     gradient_magnitudes = gradient_magnitudes.copy()
+    gradient_angles = gradient_angles.copy()
 
     # relative indices of 4 closest neighbour pixels to center pixel of a 3x3 window. maps to angle bin indices
-    row_map = np.array([(-1, 0), (-1, -1), (-1, -1), (-1, 0), (1, 0)])
-    col_map = np.array([(1, 1), (1, 0), (-1, 0), (-1, -1), (-1, -1)])
+    row_map = np.array([(1, 0), (1, 1), (1, 1), (1, 0), (1, 0)])
+    col_map = np.array([(1, 1), (1, 0), (-1, 0), (-1, -1), (1, 1)])
     row_map = np.array([row_map, -row_map])
     col_map = np.array([col_map, -col_map])
 
@@ -53,7 +63,7 @@ def non_maximal_suppression_with_interpolation(gradient_magnitudes, gradient_ang
     angles = gradient_angles[rows, cols]
     angles[angles < 0] += np.pi
     bins = np.arange(0, np.pi+np.pi/4, np.pi/4)
-    bin_indices = np.digitize(angles, bins[1:], right=False)
+    binned_indices = np.digitize(angles, bins[1:], right=False)
 
     # angle modulo 90 splits the space into two 90 degree halves (quadrants 1 and 2)
     # floor div 45 gives which half of a quadrant the angle is in (0 or 1)
@@ -67,8 +77,8 @@ def non_maximal_suppression_with_interpolation(gradient_magnitudes, gradient_ang
     interpolant_positions_ = 1 - interpolant_positions
 
     # row and column indices of 4 neighbourhood pixels (2 pairs) of each non-edge non-zero gradient magnitude pixel in direction of corresponding gradient angle
-    relative_rows = row_map[:, bin_indices]
-    relative_cols = col_map[:, bin_indices]
+    relative_rows = row_map[:, binned_indices]
+    relative_cols = col_map[:, binned_indices]
     actual_rows = rows[:, None] + relative_rows
     actual_cols = cols[:, None] + relative_cols
 
@@ -94,6 +104,16 @@ def non_maximal_suppression_with_interpolation(gradient_magnitudes, gradient_ang
         # the NMS comparison (if pixel magnitude is not greater than both neighbours, set to zero)
         if (mag <= interpolant1 or mag <= interpolant2):
             gradient_magnitudes[r, c] = 0
+
+
+    # neighbour_mags = gradient_intensities[actual_rows, actual_cols]
+    # interpolant_positions = np.array([interpolant_positions, 1 - interpolant_positions]).T
+    # interpolants = np.sum(neighbour_mags * interpolant_positions, axis=2)
+    # mags = np.array([magnitudes, interpolants[0], interpolants[1]]).T
+    # for r, c, mag in zip(rows, cols, mags):
+    #     print(mag)
+    #     if (mag[0] <= mag[1] or mag[0] <= mag[2]):
+    #         gradient_intensities[r, c] = 0
 
     return gradient_magnitudes
 
