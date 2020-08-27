@@ -134,3 +134,15 @@ class Im():
             axis.imshow(array.transpose(1, 2, 0), *args, **kwargs)
         axis.set_xlabel(array.shape)
         return None
+
+
+def matrix_to_latex(array):
+    '''Convert a 2d array to a latex-formatted string'''
+    string = r"\begin{bmatrix} " + "\n"
+    width = array.shape[-1]
+    for i, x in enumerate(array.flatten()):
+        sep = " & "
+        if (i + 1) % width == 0:
+            sep = r" \\ " + "\n"
+        string += str(x) + sep
+    return string + r"\end{bmatrix}"
