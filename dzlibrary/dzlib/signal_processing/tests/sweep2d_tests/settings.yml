@@ -90,62 +90,85 @@ Sweep2d:
         padding: [0, 0]
         stride: [1, 1]
 
-  Unit:
-    modes: ['user', 'full', 'same']
-    tests:
-      # edge cases: values exist in only a single dimension
-      test1:  # scalar
-        unpadded: [1, 1, 1, 1]
-        window: [1, 1, 1, 1]
-        padding: [2, 3]
-        stride: [2, 3]
+  unit:
+    valid:
+      modes: ['user', 'full', 'same']
+      paddings: [0, 1, 2, 3, 4, 5]
+      strides: [1, 2, 3, 4, 5, 6]
+      nums: [1, 3, 10]
+      depths: [1, 3, 10]
+      dims: [1, 3, 10, 100, 500]
 
-      test2:  # width only
-        unpadded: [1, 1, 1, 10]
-        window: [1, 1, 1, 5]
-        padding: [2, 3]
-        stride: [2, 3]
+      tests:
+        # edge cases: values exist in only a single dimension
+        test1:  # scalar
+          unpadded: [1, 1, 1, 1]
+          window: [1, 1, 1, 1]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      test3:  # height only
-        unpadded: [1, 1, 10, 1]
-        window: [1, 1, 5, 1]
-        padding: [2, 3]
-        stride: [2, 3]
+        test2:  # width only
+          unpadded: [1, 1, 1, 10]
+          window: [1, 1, 1, 5]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      test4:  # depth only
-        unpadded: [1, 10, 1, 1]
-        window: [1, 10, 1, 1]
-        padding: [2, 3]
-        stride: [2, 3]
+        test3:  # height only
+          unpadded: [1, 1, 10, 1]
+          window: [1, 1, 5, 1]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      test5:  # num only
-        unpadded: [10, 1, 1, 1]
-        window: [5, 1, 1, 1]
-        padding: [2, 3]
-        stride: [2, 3]
+        test4:  # depth only
+          unpadded: [1, 10, 1, 1]
+          window: [1, 10, 1, 1]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      # normal cases: all parity combinations of unpadded and window heights and widths
-      test6:  # even/even
-        unpadded: [10, 5, 10, 10]
-        window: [10, 5, 4, 4]
-        padding: [2, 3]
-        stride: [2, 3]
+        test5:  # num only
+          unpadded: [10, 1, 1, 1]
+          window: [5, 1, 1, 1]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      test7:  # even/odd
-        unpadded: [10, 5, 10, 10]
-        window: [10, 5, 5, 5]
-        padding: [2, 3]
-        stride: [2, 3]
+        # normal cases: all parity combinations of unpadded and window heights and widths
+        test6:  # even/even
+          unpadded: [10, 5, 10, 10]
+          window: [10, 5, 4, 4]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      test8:  # odd/even
-        unpadded: [10, 5, 11, 11]
-        window: [10, 5, 6, 6]
-        padding: [2, 3]
-        stride: [2, 3]
+        test7:  # even/odd
+          unpadded: [10, 5, 10, 10]
+          window: [10, 5, 5, 5]
+          padding: [2, 3]
+          stride: [2, 3]
 
-      test9:  # odd/odd
-        unpadded: [10, 5, 11, 11]
-        window: [10, 5, 5, 5]
-        padding: [2, 3]
-        stride: [2, 3]
+        test8:  # odd/even
+          unpadded: [10, 5, 11, 11]
+          window: [10, 5, 6, 6]
+          padding: [2, 3]
+          stride: [2, 3]
+
+        test9:  # odd/odd
+          unpadded: [10, 5, 11, 11]
+          window: [10, 5, 5, 5]
+          padding: [2, 3]
+          stride: [2, 3]
+
+    invalid:
+      modes: ["usr", "fll", "samee", ""]
+      paddings: [-5, -4, -3, -2, -1]
+      strides: [-4, -3, -2, -1, 0]
+      nums: [-4, -3, -2, -1, 0]
+      depths: [-4, -3, -2, -1, 0]
+      dims: [-4, -3, -2, -1, 0]
+
+
+
+
+
+
+
+
 

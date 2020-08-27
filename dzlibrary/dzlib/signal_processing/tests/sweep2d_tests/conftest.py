@@ -10,21 +10,27 @@ from dzlib.signal_processing.tests.sweep2d_tests.utils import generate_shape_tes
 settings_path = 'settings.yml'
 with open(settings_path) as file:
     settings = yaml.load(file, Loader=yaml.FullLoader)
-shapes_list, mode_list = generate_shape_test_params(settings)
 
+# inputs for valid tests
+valid_settings = settings['Unit']['Valid']
+valid_shapes_list, valid_mode_list = generate_shape_test_params(valid_settings)
 
-scope = "module"
+# inputs for exception tests
+invalid_settings = settings['Unit']['Invalid']
 
 
 # Test Fixtures
-@pytest.fixture(scope=scope, params=mode_list)
+scope = "module"
+
+
+@pytest.fixture(scope=scope, params=valid_mode_list)
 def mode(request):
     '''Input fixture: returns a mode string argument for Sweep2d instantiation'''
     mode = request.param
     return mode
 
 
-@pytest.fixture(scope=scope, params=shapes_list)
+@pytest.fixture(scope=scope, params=valid_shapes_list)
 def shapes(request):
     '''Input fixture: returns a set of shape tuple arguments (unpadded, window, padding, stride) for Sweep2d instantiation'''
     shapes = request.param
@@ -87,7 +93,7 @@ def expected(shapes, mode):
         padding_width = (window_width - stride_width) / 2
 
     else:
-        raise ValueError(f"Expected mode in {mode_list}, got {mode}")
+        raise ValueError(f"Expected mode in {valid_mode_list}, got {mode}")
 
     padding = (padding_height, padding_width)
     stride = (stride_height, stride_width)

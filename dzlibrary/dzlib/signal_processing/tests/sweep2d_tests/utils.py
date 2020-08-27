@@ -2,7 +2,6 @@
 
 def generate_shape_test_params(settings):
     '''Function to parse and return Sweep2d input args from settings dict loaded from a settings yaml'''
-    settings = settings['Sweep2d']['Unit']
 
     # input arg shapes
     tests = list(settings['tests'].values())  # returns list of dicts of input arg lists per test
