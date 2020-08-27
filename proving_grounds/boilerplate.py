@@ -46,3 +46,91 @@ def ntimes(func):
         return result
     func.ntimes = inner
     return func
+
+## rearranging input args in yaml file
+inputs = [[tuple(input_arg) for input_arg in input_args.values()] for input_args in tests.values()]
+
+
+
+class Im():
+    '''Class to store and correlate multiple colorspace representations of a numpy array image. Colorspace representations are as follows:
+    RGB: Red, Green, Blue; Shape (3 x H x W)
+    HSV: Hue, Saturation, Value; Shape (3 x H x W)
+    GS: Grayscale; Shape (H x W)
+    BN: Binary; Shape (H x W)
+    Class is instantiated with no inputs. If an RGB image is set via the RGB attribute, the HSV and GS images will be derived and set from the RGB image. Similar, setting a HSV image will derive and set the RGB and GS images. Settings a GS image will set the RGB and HSV images to None. Settings a BN image will have no effect on the other attributes as the Binary representation is arbitrary.'''
+    def __init__(self):
+        self._rgb = None
+        self._hsv = None
+        self._gs = None
+        self._bn = None
+
+    def _rgb_to_hsv(self):
+        return rgb_to_hsv(self.rgb.transpose(1, 2, 0)).transpose(2, 0, 1)
+
+    def _hsv_to_rgb(self):
+        return hsv_to_rgb(self.hsv.transpose(1, 2, 0)).transpose(2, 0, 1)
+
+    def _hsv_to_gs(self):
+        return hsv_to_gs(self.hsv)
+
+    @property
+    def rgb(self):
+        return self._rgb
+
+    @rgb.setter
+    def rgb(self, array):
+        if (array.ndim != 3 and array.shape[0] != 3):
+            raise ValueError(f"Expected array of shape (3 x H x W), got {array.shape}")
+        else:
+            self._rgb = array
+            self._hsv = self._rgb_to_hsv()
+            self._gs = self._hsv_to_gs()
+
+    @property
+    def hsv(self):
+        return self._hsv
+
+    @hsv.setter
+    def hsv(self, array):
+        if (array.ndim != 3 and array.shape[0] != 3):
+            raise ValueError(f"Expected array of shape (3 x H x W), got {array.shape}")
+        else:
+            self._hsv = array
+            self._rgb = self._hsv_to_rgb()
+            self._gs = self._hsv_to_gs()
+
+    @property
+    def gs(self):
+        return self._gs
+
+    @gs.setter
+    def gs(self, array):
+        if array.ndim != 2:
+            raise ValueError(f"Expected array of shape (H x W), got {array.shape}")
+        else:
+            self._gs = array
+            self._rgb = None
+            self._hsv = None
+
+    @property
+    def bn(self):
+        return self._bn
+
+    @bn.setter
+    def bn(self, array):
+        if array.ndim != 2:
+            raise ValueError(f"Expected array of shape (H x W), got {array.shape}")
+        elif np.unique(array) != 2:
+            raise ValueError(f"Expected array with 2 unique values, {np.unique(array)}")
+        else:
+            self._bn = array
+
+    @staticmethod
+    def show(axis, array, *args, **kwargs):
+        try:
+            axis.imshow(array, *args, **kwargs)
+        except TypeError:
+            axis.imshow(array.transpose(1, 2, 0), *args, **kwargs)
+        axis.set_xlabel(array.shape)
+        return None
