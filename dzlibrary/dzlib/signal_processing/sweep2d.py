@@ -67,3 +67,6 @@ class Sweep2d(SweepNd):
 
     def convolve2d(self, images, kernels):
         return super()._convolve(images, kernels)
+
+    def median2d(self, images):
+        return super()._median(images)

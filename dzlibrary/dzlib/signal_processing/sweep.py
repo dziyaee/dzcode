@@ -184,72 +184,16 @@ class SweepNd():
         # convolve via dot product
         return np.matmul(kr2row, im2cols).reshape(self.output.shape).astype(self.dtype)
 
+    def _median(self, images):
+        # images
+        images = self._expand(images, self.unpadded.shape)
+        images = self._pad(images)
+        im2cols = self._im2col(images)
+        median = np.median(im2cols, axis=1)
+        return median.reshape(self.output.shape).astype(self.dtype)
+
     def __repr__(self):
         return f"{self.__class__.__name__}(unpadded = {self.unpadded.shape}, window = {self.window.shape}, padding = {self.padding.shape}, stride = {self.stride.shape}, mode = '{self.mode}', id = {hex(id(self))})"
 
     def __str__(self):
         return f"{self.__class__.__name__}(unpadded = {self.unpadded}, window = {self.window}, padding = {self.padding}, stride = {self.stride}, mode = '{self.mode}')"
-
-
-if __name__ == "__main__":
-    pass
-
-
-
-# TO BE IMPLEMENTED
-
-    # def median2d(self, images):
-    #     # validate inputs and expand to 4d if valid
-    #     images = self._make4d(images)
-    #     kernels = self._make4d(kernels)
-
-    #     # pad images
-    #     images = self._pad2d(images)
-
-    #     # validate input shapes
-    #     if images.shape != self.xx.shape:
-    #         raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
-
-    #     if kernels.shape != self.kk.shape:
-    #         raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
-
-    #     # create im2col matrices
-    #     im2cols = self._im2col(images)
-
-    #     # update output shape depth to 1 (because number of kernels = 1 for median2d operation)
-    #     xx = self.xx
-    #     yy = self.yy
-    #     output_shape = (xx.num, 1, yy.height, yy.width)
-    #     yy = Shape(output_shape)
-
-    #     # Median Filter calculates the median of the 3d im2col matrix along axis 1 (down through each column / across rows). Reshape to proper output dimensions
-    #     outputs = np.median(im2cols, axis=1).reshape(yy.shape)
-    #     return outputs
-
-    # def mean2d(self, images):
-    #     # validate inputs and expand to 4d if valid
-    #     images = self._make4d(images)
-    #     kernels = self._make4d(kernels)
-
-    #     # pad images
-    #     images = self._pad2d(images)
-
-    #     # validate input shapes
-    #     if images.shape != self.xx.shape:
-    #         raise ValueError(f"Expected images shape to be {self.xx.shape}, got {images.shape}")
-
-    #     if kernels.shape != self.kk.shape:
-    #         raise ValueError(f"Expected kernels shape to be {self.kk.shape}, got {kernels.shape}")
-
-    #     # create im2col matrices
-    #     im2cols = self._im2col(images)
-
-    #     # update output shape depth to 1 (because number of kernels = 1 for mean2d operation)
-    #     xx = self.xx
-    #     yy = self.yy
-    #     output_shape = (xx.num, 1, yy.height, yy.width)
-    #     yy = Shape(output_shape)
-
-    #     # Median Filter calculates the median of the 3d im2col matrix along axis 1 (down through each column / across rows). Reshape to proper output dimensions
-    #     outputs = np.mean(im2cols, axis=1).reshape(yy.shape)
-    #     return outputs
