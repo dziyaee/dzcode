@@ -1,170 +1,262 @@
 import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
 from PIL import Image
-from dzlib.signal_processing.sweep2d import Sweep2d
-from dzlib.signal_processing.hough import Hough
-from dzlib.common.utils import stats, info
+from matplotlib.colors import rgb_to_hsv, hsv_to_rgb
+from dzlib.signal_processing import sweep2d, kernels, edge_thinning
 
 
 mpl.use("Qt5Agg")
 
 
-## IMAGE LOADING ---------
-# load image as array, normalize, transpose
-image_path = "data/highway1.png"
+def imshow(axis, array, **kwargs):
+    '''axis imshow for (H x W) or (3 x H x W) array with some default kwargs'''
 
-image_rgb = Image.open(image_path).convert("RGB")  # (W x H x C)
-array_rgb = np.asarray(image_rgb)  # (H x W x C)
-array_rgb = array_rgb / 255
+    defaults = {'extent': [0, array.shape[-1], 0, array.shape[-2]], 'interpolation': None}
+    kwargs = {**defaults, **kwargs}
 
-## IMAGE FILTERING ---------
-# apply mask to filter all colors except yellow and white
-# idea from: https://www.hackster.io/kemfic/simple-lane-detection-c3db2f
+    try:
+        axis.imshow(array, **kwargs)
+    except TypeError:
+        axis.imshow(array.transpose(1, 2, 0), **kwargs)
 
-# convert to HSV (linked post uses HSL colorspace, but I had an easier time converting image to HSV)
-array_hsv = rgb_to_hsv(array_rgb)
-array_rgb = array_rgb.transpose(2, 0, 1)  # (C x H x W)
-array_hsv = array_hsv.transpose(2, 0, 1)  # (C x H x W)
+    axis.set_xlabel(array.shape)
+    return None
 
-# yellow HSV mins/maxs
-ymins = np.array([40/360, 70/100, 70/100]).reshape(3, 1, 1)
-ymaxs = np.array([50/360, 100/100, 100/100]).reshape(3, 1, 1)
 
-# white HSV mins/maxs
-wmins = np.array([0/360, 0/100, 95/100]).reshape(3, 1, 1)
-wmaxs = np.array([360/360, 100/100, 100/100]).reshape(3, 1, 1)
+def set_titles(axes, titles):
+    '''set axis titles'''
+    try:
+        for axis, title in zip(axes.flatten(), titles):
+            axis.set_title(title)
 
-# convert any values outside yellow AND white HSV ranges to zero (this is highly tunable...)
-x = array_hsv.copy()  # to keep the mask code fairly readable
-x[((x > wmaxs) | (x < wmins)) & ((x > ymaxs) | (x < ymins))] = 0
-array_hsv_masked = x.copy()
-array_rgb_masked = hsv_to_rgb(array_hsv_masked.transpose(1, 2, 0))  # (H x W x C)
-array_rgb_masked = array_rgb_masked.transpose(2, 0, 1)  # (C x H x W)
-del x
+    except AttributeError:
+        axis.set_title(*titles)
 
-## EDGE DETECTION --------
-# convert masked RGB to binary for edge detection purposes
-x = array_rgb_masked.copy()
-x[x != 0] = 1
-array_bn_masked = np.mean(x, axis=0)  # all channels of x have same values, so mean is taken to reduce down to 2d image
-del x
+    return None
 
-# edge detection on grayscale image via Sobel operator kernels and Sweep2d class to perform the convolution operation
-# idea from: https://en.wikipedia.org/wiki/Sobel_operator
-# the results from the vertical and horizontal edge detections can be combined to produce a full image edge map
-gx = np.array([[1, 0, -1], [2, 0, -2], [1, 0, -1]])  # vertical edge detection kernel (3 x 3)
-gy = np.array([[1, 2, 1], [0, 0, 0], [-1, -2, -1]])  # horizontal edge detection kernel (3 x 3)
 
-# Sweep2d inputs
-images = array_bn_masked[None, None]  # convert 1 2d grayscale image array to 1 4d array (1 x 1 x H x W)
-kernels = np.array([[gx], [gy]])  # convert 2 2d kernel arrays to 1 4d array (2 x 1 x 3 x 3)
+def tick_params(axes, **kwargs):
+    '''set axis tick params with some defaults'''
+    defaults = {'left': False, 'labelleft': False, 'bottom': False, 'labelbottom': False}
+    kwargs = {**defaults, **kwargs}
+    try:
+        for axis in axes.flatten():
+            axis.tick_params(**kwargs)
+
+    except AttributeError:
+        axis.tick_params(**kwargs)
+
+    return None
+
+
+def subplots_adjust(fig, **kwargs):
+    '''set subplot params with some defaults'''
+    defaults = {'left': 0.01, 'right': 0.99, 'wspace': 0.01, 'bottom': 0.05, 'top': 0.95, 'hspace': 0.2}
+    kwargs = {**defaults, **kwargs}
+    fig.subplots_adjust(**kwargs)
+    return None
+
+
+def hsv(*values):
+    '''Returns 3-tuple of HSV values normalized to interval [0, 1] from human-readable HSV values'''
+    norm = (360, 100, 100)
+    return tuple([v / n for v, n in zip(values, norm)])
+
+
+def mask_3channel(array, mins, maxs):
+    '''Returns a boolean mask of a 3-channel array with condition that all 3 values per channel are within a min and max range'''
+    mask_min = ((array[0] >= mins[0]) & (array[1] >= mins[1]) & (array[2] >= mins[2]))
+    mask_max = ((array[0] <= maxs[0]) & (array[1] <= maxs[1]) & (array[2] <= maxs[2]))
+    return mask_min & mask_max
+
+
+def hsv_to_gs(array):
+    '''Returns grayscale channel of an HSV array'''
+    return array[2].copy()
+
+
+def normalize(array):
+    '''Returns array normalized to interval [0, 1]'''
+    array = array - np.min(array)
+    return array / np.max(array)
+
+
+# arrays are commented with shape and min, max interval as follows: (N x M x ...), [min... max]
+# IMAGE LOADING -------------------------------------------------------------
+
+# load image
+image_path = "data/image01.png"
+pil_rgb = Image.open(image_path).convert("RGB")  # (W x H x 3)
+image_rgb = np.asarray(pil_rgb)  # (H x W x 3), [0... 255]
+image_rgb = normalize(image_rgb)  # (H x W x 3), [0... 1]
+image_hsv = rgb_to_hsv(image_rgb)  # (H x W x 3)
+
+image_rgb = image_rgb.transpose(2, 0, 1)  # (3 x H x W), [0... 1]
+image_hsv = image_hsv.transpose(2, 0, 1)  # (3 x H x W), [0... 1]
+image_gs = hsv_to_gs(image_hsv)  # (H x W), [0... 1]
+
+
+# recurring parameters (used by Sweep2d class)
 padding = (0, 0)
 stride = (1, 1)
 mode = "same"
 
-# edge detection
-sweeper = Sweep2d(images.shape, kernels.shape, padding, stride, mode)
-vertical_edges, horizontal_edges = sweeper.convolve2d(images, kernels)[0]  # (H x W)
-edges = np.sqrt((vertical_edges ** 2) + (horizontal_edges ** 2))
 
-# normalize
-edges = edges - np.min(edges)
-edges = edges / np.max(edges)
+# IMAGE MASKING -------------------------------------------------------------
+# I used this website http://colorizer.org/ to settle on mins / maxs for yellow and white HSV values
 
-# binarize
-edges_bn = edges.copy()
-edges_bn[edges_bn != 0] = 1
+# yellow
+ymins = hsv(40, 70, 70)
+ymaxs = hsv(50, 100, 100)
 
-## LINE DETECTION -----------
-rho_step = 1
-theta_step = 1
-theta_min = -85
-theta_max = 85
-threshold = 0.51
-hough = Hough(edges_bn, rho_step, theta_step, (theta_min, theta_max))
-hough.transform(threshold)
-print(hough.n_lines)
+# white
+wmins = hsv(0, 0, 70)
+wmaxs = hsv(360, 10, 100)
 
-# PLOTS -----------------
-fig4, axes4 = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
-ax10, ax11 = axes4
+# mask
+masked_hsv = image_hsv.copy()  # (3 x H x W)
+yellow_mask = mask_3channel(masked_hsv, ymins, ymaxs)  # mask with all non-yellow pixel values set to False
+white_mask = mask_3channel(masked_hsv, wmins, wmaxs)  # mask with all non-white pixel values set to False
+mask = ~(yellow_mask | white_mask)  # mask with all non-yellow or non-white pixels set to True
+masked_hsv[:, mask] = 0
 
-fig3, axes3 = plt.subplots(nrows=2, ncols=2, figsize=(16, 8))
-ax6, ax7 = axes3[0]
-ax8, ax9 = axes3[1]
+masked_rgb = hsv_to_rgb(masked_hsv.transpose(1, 2, 0))  # (H x W x 3)
+masked_rgb = masked_rgb.transpose(2, 0, 1)  # (3 x H x W)
+masked_gs = hsv_to_gs(masked_hsv)  # (H x W)
 
-fig2, axes2 = plt.subplots(nrows=1, ncols=3, figsize=(16, 8))
-ax3, ax4, ax5 = axes2
 
-fig1, axes1 = plt.subplots(nrows=1, ncols=2, figsize=(16, 8))
-ax1, ax2 = axes1
+# IMAGE DENOISING (Gaussian Blur / Gaussian Smoothing) ------------------------
+images = masked_gs[None, None]  # (1 x 1 x H x W)
+gaussian_kernel = kernels.gaussian2d(size=5, sigma=1)[None, None]  # (1 x 1 x 5 x 5)
+sweeper = sweep2d.Sweep2d(images.shape, gaussian_kernel.shape, padding, stride, mode)
+blurred_gs = sweeper.convolve2d(images, gaussian_kernel)  # (1 x 1 x H x W)
+blurred_gs = normalize(blurred_gs[0, 0, :, :])  # (H x W), [0... 1]
 
-figs = [fig1, fig2, fig3, fig4]
-axes = [ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8, ax9, ax10, ax11]
+
+# IMAGE GRADIENT INTENSITIES & DIRECTIONS (Sobel Operator) ---------------------
+images = blurred_gs[None, None]  # (1 x 1 x H x W)
+sobel_operator = kernels.sobel_operator()  # (2 x 1 x 3 x 3)
+sweeper = sweep2d.Sweep2d(images.shape, sobel_operator.shape, padding, stride, mode)
+Gx, Gy = sweeper.convolve2d(images, sobel_operator)[0]  # 2 x (H x W)
+gradient_magnitudes = np.sqrt(Gx ** 2 + Gy ** 2)  # (H x W)
+gradient_magnitudes = normalize(gradient_magnitudes)  # [0... 1]
+gradient_angles = np.arctan2(Gy, Gx)  # (H x W), [-pi... pi]
+
+
+# EDGE THINNING via Non-Maximal Suppression (NMS) (without Interpolation)-----
+thinned_gs = edge_thinning.non_maximal_suppression(gradient_magnitudes, gradient_angles)  # (H x W), [0... 1]
+
+
+# BINARIZE EDGE MAP (FOR DISPLAY PURPOSES ONLY)
+thinned_bn = thinned_gs.copy()
+thinned_bn[thinned_bn <= np.mean(thinned_bn) + 10 * np.std(thinned_bn)] = 0
+thinned_bn[thinned_bn != 0] = 1
+
+
+# IMAGE PLOTTING -------------------------------------------------------------
 
 # Fig 1
-fig1.suptitle("Original Images")
-ax1.set_title("original image (RGB)")
-ax1.imshow(array_rgb.transpose(1, 2, 0))
-ax1.set_xlabel(f"{array_rgb.shape}")
+fig1, axes1 = plt.subplots(nrows=2, ncols=3, figsize=(16, 8), sharex=True, sharey=True)
+titles1 = ("Image (RGB)", "Image (HSV)", "Image (GS)", "Masked (RGB)", "Masked (HSV)", "Masked (GS)")
+ax1, ax2, ax3 = axes1[0]
+ax4, ax5, ax6 = axes1[1]
 
-ax2.set_title("original image (HSV)")
-ax2.imshow(array_hsv.transpose(1, 2, 0))
-ax2.set_xlabel(f"{array_hsv.shape}")
+subplots_adjust(fig1)
+tick_params(axes1)
+set_titles(axes1, titles1)
+
+# Row 1 (Original Images)
+imshow(ax1, image_rgb, cmap=None)
+imshow(ax2, image_hsv, cmap='hsv')
+imshow(ax3, image_gs, cmap='gray')
+
+# Row 2 (Masked Images)
+imshow(ax4, masked_rgb, cmap=None)
+imshow(ax5, masked_hsv, cmap='hsv')
+imshow(ax6, masked_gs, cmap='gray')
+
 
 # Fig 2
-fig2.suptitle("Masked Images (Keeping Yellow and White colors)")
-ax3.set_title("masked image (HSV)")
-ax3.imshow(array_hsv_masked.transpose(1, 2, 0))
-ax3.set_xlabel(f"{array_hsv_masked.shape}")
+fig2, axes2 = plt.subplots(nrows=2, ncols=3, figsize=(16, 8), sharex=True, sharey=True)
+titles2 = ("Masked (GS)", "Horizontal Gradients (GS)", "Gradient Magnitudes (GS)", "Blurred (GS)", "Vertical Gradients (GS)", "Gradient Angles")
+ax1, ax3, ax5 = axes2[0]
+ax2, ax4, ax6 = axes2[1]
 
-ax4.set_title("masked image (RGB)")
-ax4.imshow(array_rgb_masked.transpose(1, 2, 0))
-ax4.set_xlabel(f"{array_rgb_masked.shape}")
+subplots_adjust(fig2)
+tick_params(axes2)
+set_titles(axes2, titles2)
 
-ax5.set_title("masked image (BN)")
-ax5.imshow(array_bn_masked, cmap='gray')
-ax5.set_xlabel(f"{array_bn_masked.shape}")
+# Col 1 (Masked & Blurred Images)
+imshow(ax1, masked_gs, cmap='gray')
+imshow(ax2, blurred_gs, cmap='gray')
+
+# Col 2 (Horizontal & Vertical Gradient Intensities)
+imshow(ax3, Gy, cmap='gray')
+imshow(ax4, Gx, cmap='gray')
+
+# Col 3 (Gradient Intensity Magnitudes & Gradient Angles)
+imshow(ax5, gradient_magnitudes, cmap='gray')
+imshow(ax6, gradient_angles, cmap=None)
+
 
 # Fig 3
-fig3.suptitle("Edge Maps")
-ax6.set_title("vertical edge map (GS)")
-ax6.imshow(vertical_edges, cmap='gray')
-ax6.set_xlabel(f"{vertical_edges.shape}")
+fig3, axes3 = plt.subplots(nrows=2, ncols=3, figsize=(16, 8), sharex=True, sharey=True)
+titles3 = ("Image (RGB)", "Masked (GS)", "Gradient Magnitudes (GS)", "Image (GS)", "Blurred (GS)", "Thinned (GS)")
+ax1, ax3, ax5 = axes3[0]
+ax2, ax4, ax6 = axes3[1]
 
-ax7.set_title("horizontal edge map (GS)")
-ax7.imshow(horizontal_edges, cmap='gray')
-ax7.set_xlabel(f"{horizontal_edges.shape}")
+subplots_adjust(fig3)
+tick_params(axes3)
+set_titles(axes3, titles3)
 
-ax8.set_title("combined edge map (GS)")
-ax8.imshow(edges, cmap='gray')
-ax8.set_xlabel(f"{edges.shape}")
+# Col 1 (Original Images)
+imshow(ax1, image_rgb, cmap=None)
+imshow(ax2, image_gs, cmap='gray')
 
-ax9.set_title("binarized edge map (GS)")
-ax9.imshow(edges_bn, cmap='gray')
-ax9.set_xlabel(f"{edges_bn.shape}")
+# Col 2 (Masked & Blurred Images)
+imshow(ax3, masked_gs, cmap='gray')
+imshow(ax4, blurred_gs, cmap='gray')
+
+# Col 3 (Gradient Intensity Magnitudes and Thinned Edge Image)
+imshow(ax5, gradient_magnitudes, cmap='gray')
+imshow(ax6, thinned_gs, cmap='gray')
+
 
 # Fig 4
-fig4.suptitle("Images with Line overlays")
-ax10.set_title("binarized edge map (GS) with lines")
-ax10.imshow(edges_bn, cmap='gray')
-ax10.set_xlabel(f"{edges_bn.shape}")
+fig4, axes4 = plt.subplots(nrows=2, ncols=3, figsize=(16, 8), sharex=True, sharey=True)
+titles3 = ("Image (RGB)", "Blurred (GS)", "Thinned (GS)", "Image (GS)", "Gradient Magnitudes (GS)", "Thinned (BN)")
+ax1, ax3, ax5 = axes4[0]
+ax2, ax4, ax6 = axes4[1]
 
-ax11.set_title("original image (RGB) with lines")
-ax11.imshow(array_rgb.transpose(1, 2, 0))
-ax11.set_xlabel(f"{array_rgb.shape}")
+subplots_adjust(fig4)
+tick_params(axes4)
+set_titles(axes4, titles3)
 
-for xcoords, ycoords in hough.lines:
-    ax10.plot(xcoords, ycoords, color='forestgreen')
-    ax11.plot(xcoords, ycoords, color='forestgreen')
+# Col 1 (Original Images)
+imshow(ax1, image_rgb, cmap=None)
+imshow(ax2, image_gs, cmap='gray')
 
-for ax in axes:
-    ax.tick_params(left=False, bottom=False, labelleft=False, labelbottom=False)
+# Col 2 (Masked & Blurred Images)
+imshow(ax3, blurred_gs, cmap='gray')
+imshow(ax4, gradient_magnitudes, cmap='gray')
 
-for fig in figs:
-    fig.subplots_adjust(left=0.01, right=0.99, wspace=0.01)
-
+# Col 3 (Gradient Intensity Magnitudes and Thinned Edge Image)
+imshow(ax5, thinned_gs, cmap='gray')
+imshow(ax6, thinned_bn, cmap='binary')
 
 plt.show()
+
+
+# # # LINE DETECTION -----------
+# rho_step = 1
+# theta_step = 1
+# theta_min = -85
+# theta_max = 85
+# threshold = 0.9
+# hough = Hough(edges_bn, rho_step, theta_step, (theta_min, theta_max))
+# hough.transform(threshold)
+# print(hough.n_lines)
+# for xcoords, ycoords in hough.lines:
+#     ax10.plot(xcoords, ycoords, color='forestgreen')
+#     ax11.plot(xcoords, ycoords, color='forestgreen')
