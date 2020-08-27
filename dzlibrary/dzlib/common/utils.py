@@ -226,3 +226,25 @@ def timer(func):
 
     func.timer = inner
     return func
+
+
+def center_crop(array, new_shape):
+    '''Returns a center-cropped array. Array can be Ndimensional. Crop is left-biased. Crop will take place on inner-most dimensions if length of new_shape is less than length of array shape. new_shape dimensions d where d <1 or d > array.shape dimensions will yield an empty array.
+    The indexing is made flexible to Ndimension Arrays using built-in slice objects and ellipses:
+    https://docs.python.org/3/library/functions.html#slice
+    https://python-reference.readthedocs.io/en/latest/docs/brackets/ellipsis.html
+    '''
+
+    # Determine crop dimensions
+    old_ndim = len(array.shape)
+    new_ndim = len(new_shape)
+    i = min(old_ndim, new_ndim)  # Crop order starts from inner-most dimensions
+
+    # Construct slices
+    diffs = [old - new for old, new in zip(array.shape[-i:], new_shape[-i:])]  # differences per dimension
+    starts = [diff // 2 for diff in diffs]  # start indices for each slice
+    stops = [start - diff if diff != 0 else None for diff, start in zip(diffs, starts)]  # stop indices for each slice
+    slices = tuple(slice(start, stop) for start, stop in zip(starts, stops))  # slices per dimension
+    slices = (..., *slices)  # account for non-cropped dimensions
+
+    return array[slices]
